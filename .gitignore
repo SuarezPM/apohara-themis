@@ -23,6 +23,9 @@ Cargo.lock.bak
 secrets/
 /keys/
 /demo-tenant-keys/
+# Rendered Band agent config (contains real api_keys) — template is committed
+crates/themis-band-client/agent-config/agent_config.yaml
+/crates/**/agent_config.yaml
 
 # ─── Demo evidence (built locally, regenerated for each demo run) ──
 /demo/expected-evidence/*.rekor
