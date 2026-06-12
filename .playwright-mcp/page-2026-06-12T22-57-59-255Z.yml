@@ -1,0 +1,133 @@
+- generic [active] [ref=e1]:
+  - navigation "Primary" [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: Θ
+      - generic [ref=e5]: THEMIS
+      - generic [ref=e6]: ap invoice audit
+    - generic "Active tenant" [ref=e7]:
+      - generic [ref=e8]: Tenant
+      - combobox "Tenant" [ref=e9] [cursor=pointer]:
+        - option "Stark Industries" [selected]
+        - option "Wayne Enterprises"
+      - generic [ref=e10]: 2 trust domains · Ed25519 isolated keys
+    - status [ref=e11]:
+      - generic [ref=e13]: Live · 0 events
+  - region "Audit an invoice against the PO database, BAAAR gate, and Evidence Packet." [ref=e14]:
+    - generic [ref=e15]:
+      - paragraph [ref=e16]: Step 01 · Submit
+      - heading "Audit an invoice against the PO database, BAAAR gate, and Evidence Packet." [level=1] [ref=e17]
+      - paragraph [ref=e18]: One invoice → five-agent debate → Ed25519-signed packet. Pick a fixture; the demo URL is read-only and stateless.
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]: Invoice fixture
+        - combobox "Invoice fixture" [ref=e22] [cursor=pointer]:
+          - option "Stark · clean PO match (approve path)" [selected]
+          - option "Stark · 3× price gouge (BAAAR halt path)"
+          - option "Stark · phantom vendor (BAAAR halt path)"
+          - option "Wayne · math fraud (BAAAR halt path)"
+          - option "Wayne · duplicate submission (BAAAR halt path)"
+      - button "Run audit" [ref=e23] [cursor=pointer]:
+        - generic [ref=e24]: Run audit
+  - region "Per-agent cost and token spend" [ref=e25]:
+    - generic [ref=e26]:
+      - paragraph [ref=e27]: Step 02 · Live counter
+      - heading "Per-agent cost and token spend" [level=2] [ref=e28]
+    - generic [ref=e29]:
+      - article [ref=e30]:
+        - heading "Extractor" [level=3] [ref=e31]
+        - paragraph [ref=e32]: gemini-3.1-flash-lite
+        - generic [ref=e33]:
+          - term [ref=e34]: Tokens in
+          - definition [ref=e35]: —
+          - term [ref=e36]: Tokens out
+          - definition [ref=e37]: —
+          - term [ref=e38]: Cost (USD)
+          - definition [ref=e39]: —
+      - article [ref=e40]:
+        - heading "PO Matcher" [level=3] [ref=e41]
+        - paragraph [ref=e42]: qwen3-coder-30b
+        - generic [ref=e43]:
+          - term [ref=e44]: Tokens in
+          - definition [ref=e45]: —
+          - term [ref=e46]: Tokens out
+          - definition [ref=e47]: —
+          - term [ref=e48]: Cost (USD)
+          - definition [ref=e49]: —
+      - article [ref=e50]:
+        - heading "Fraud Auditor" [level=3] [ref=e51]
+        - paragraph [ref=e52]: claude-sonnet-4.6
+        - generic [ref=e53]:
+          - term [ref=e54]: Tokens in
+          - definition [ref=e55]: —
+          - term [ref=e56]: Tokens out
+          - definition [ref=e57]: —
+          - term [ref=e58]: Cost (USD)
+          - definition [ref=e59]: —
+      - article [ref=e60]:
+        - heading "GAAP Classifier" [level=3] [ref=e61]
+        - paragraph [ref=e62]: glm-5.1
+        - generic [ref=e63]:
+          - term [ref=e64]: Tokens in
+          - definition [ref=e65]: —
+          - term [ref=e66]: Tokens out
+          - definition [ref=e67]: —
+          - term [ref=e68]: Cost (USD)
+          - definition [ref=e69]: —
+      - article [ref=e70]:
+        - heading "Provenance Signer" [level=3] [ref=e71]
+        - paragraph [ref=e72]: claude-haiku-4.5
+        - generic [ref=e73]:
+          - term [ref=e74]: Tokens in
+          - definition [ref=e75]: —
+          - term [ref=e76]: Tokens out
+          - definition [ref=e77]: —
+          - term [ref=e78]: Cost (USD)
+          - definition [ref=e79]: —
+      - article [ref=e80]:
+        - heading "Total" [level=3] [ref=e81]
+        - paragraph [ref=e82]: 5 LLM calls · 1 BLAKE3 · 1 Ed25519 · 1 RFC 3161
+        - generic [ref=e83]:
+          - term [ref=e84]: Tokens in
+          - definition [ref=e85]: —
+          - term [ref=e86]: Tokens out
+          - definition [ref=e87]: —
+          - term [ref=e88]: Cost (USD)
+          - definition [ref=e89]: —
+  - region "Agent @mention debate" [ref=e90]:
+    - generic [ref=e91]:
+      - paragraph [ref=e92]: Step 03 · Band transcript
+      - heading "Agent @mention debate" [level=2] [ref=e93]
+      - paragraph [ref=e94]: Every handoff is a real Band message. The room id, agent ids, and timestamps are the audit trail.
+    - list [ref=e95]:
+      - listitem [ref=e96]: No events yet — submit an invoice to start the debate.
+  - region "Sealed packet, ready to verify offline" [ref=e97]:
+    - generic [ref=e98]:
+      - paragraph [ref=e99]: Step 04 · Evidence
+      - heading "Sealed packet, ready to verify offline" [level=2] [ref=e100]
+      - paragraph [ref=e101]: Ed25519 signature over BLAKE3(payload) · RFC 3161 timestamp from the TSA · Rekor v2 log anchor (when wired).
+    - article [ref=e103]:
+      - heading "Packet summary" [level=3] [ref=e104]
+      - generic [ref=e105]:
+        - term [ref=e106]: Status
+        - definition [ref=e107]: —
+        - term [ref=e108]: Tenant
+        - definition [ref=e109]: —
+        - term [ref=e110]: Invoice
+        - definition [ref=e111]: —
+        - term [ref=e112]: Decisions
+        - definition [ref=e113]: —
+        - term [ref=e114]: Framework coverage
+        - definition [ref=e115]: —
+      - generic [ref=e116]:
+        - button "Download JSON" [disabled] [ref=e117]
+        - link "Compliance dashboard" [ref=e118] [cursor=pointer]:
+          - /url: /compliance
+  - contentinfo [ref=e119]:
+    - paragraph [ref=e120]:
+      - text: THEMIS · v0.1.0 · commit pending ·
+      - link "source" [ref=e121] [cursor=pointer]:
+        - /url: https://github.com/SuarezPM/apohara-themis
+      - text: ·
+      - link "compliance" [ref=e122] [cursor=pointer]:
+        - /url: /compliance
+      - text: · MIT

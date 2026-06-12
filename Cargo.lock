@@ -843,6 +843,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "themis-compliance"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "themis-agents",
+ "themis-orchestrator",
+]
+
+[[package]]
 name = "themis-compressor"
 version = "0.1.0"
 
