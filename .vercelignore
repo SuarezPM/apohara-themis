@@ -1,0 +1,26 @@
+# Vercel upload exclusions — keep the deployment context minimal.
+# Only the static site (built into public/ by scripts/vercel-build.sh)
+# actually ships; the Rust workspace is irrelevant for the static demo.
+target/
+**/target/
+.archive/
+.claude/
+.omc/
+.cocoindex_code/
+.gitnexus/
+.playwright-mcp/
+playwright-report/
+playwright/.cache/
+test-results/
+coverage/
+*.log
+*.pem
+*.key
+keys/
+demo-tenant-keys/
+secrets/
+.env
+.env.local
+.env.*.local
+crates/themis-band-client/agent-config/agent_config.yaml
+crates/**/agent_config.yaml
