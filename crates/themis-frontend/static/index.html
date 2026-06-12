@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>THEMIS · AP Invoice Audit · Stark/Wayne</title>
+  <link rel="stylesheet" href="/static/tokens.css" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <!-- ───── N6 Command-bar nav ───── -->
+  <nav class="n6" aria-label="Primary">
+    <div class="n6__brand">
+      <span class="n6__brand-mark" aria-hidden="true">Θ</span>
+      <span class="n6__brand-name">THEMIS</span>
+      <span class="n6__brand-tag">ap invoice audit</span>
+    </div>
+    <div class="n6__tenant" aria-label="Active tenant">
+      <label for="tenant-switch" class="n6__tenant-label">Tenant</label>
+      <select id="tenant-switch" class="n6__tenant-select" aria-describedby="tenant-help">
+        <option value="stark">Stark Industries</option>
+        <option value="wayne">Wayne Enterprises</option>
+      </select>
+      <span id="tenant-help" class="n6__tenant-help">2 trust domains · Ed25519 isolated keys</span>
+    </div>
+    <div class="n6__live" role="status" aria-live="polite">
+      <span class="n6__live-dot" aria-hidden="true"></span>
+      <span class="n6__live-text">Live · <span id="n6-event-count">0</span> events</span>
+    </div>
+  </nav>
+
+  <!-- ───── Section 1 · Submit ───── -->
+  <section class="submit" aria-labelledby="submit-h">
+    <header class="submit__head">
+      <p class="eyebrow">Step 01 · Submit</p>
+      <h1 id="submit-h" class="submit__h1">
+        Audit an invoice against the PO database, BAAAR gate, and Evidence Packet.
+      </h1>
+      <p class="submit__lede">
+        One invoice → five-agent debate → Ed25519-signed packet.
+        Pick a fixture; the demo URL is read-only and stateless.
+      </p>
+    </header>
+    <form class="submit__form" id="submit-form" novalidate>
+      <label class="field">
+        <span class="field__label">Invoice fixture</span>
+        <select id="invoice-fixture" class="field__input" required>
+          <option value="clean-001">Stark · clean PO match (approve path)</option>
+          <option value="gouge-001">Stark · 3× price gouge (BAAAR halt path)</option>
+          <option value="phantom-001">Stark · phantom vendor (BAAAR halt path)</option>
+          <option value="math-001">Wayne · math fraud (BAAAR halt path)</option>
+          <option value="duplicate-001">Wayne · duplicate submission (BAAAR halt path)</option>
+        </select>
+      </label>
+      <button type="submit" class="btn btn--primary" id="submit-btn" data-state="default">
+        <span class="btn__label">Run audit</span>
+        <span class="btn__spinner" aria-hidden="true"></span>
+      </button>
+    </form>
+  </section>
+
+  <!-- ───── Section 2 · Live counter + status ───── -->
+  <section class="counter" aria-labelledby="counter-h">
+    <header class="counter__head">
+      <p class="eyebrow">Step 02 · Live counter</p>
+      <h2 id="counter-h" class="counter__h2">Per-agent cost and token spend</h2>
+    </header>
+    <div class="counter__grid" id="counter-grid">
+      <article class="cell" data-agent="extractor" data-state="default">
+        <h3 class="cell__h">Extractor</h3>
+        <p class="cell__model">gemini-3.1-flash-lite</p>
+        <dl class="cell__dl">
+          <dt>Tokens in</dt><dd data-k="in">—</dd>
+          <dt>Tokens out</dt><dd data-k="out">—</dd>
+          <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
+        </dl>
+      </article>
+      <article class="cell" data-agent="po_matcher" data-state="default">
+        <h3 class="cell__h">PO Matcher</h3>
+        <p class="cell__model">qwen3-coder-30b</p>
+        <dl class="cell__dl">
+          <dt>Tokens in</dt><dd data-k="in">—</dd>
+          <dt>Tokens out</dt><dd data-k="out">—</dd>
+          <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
+        </dl>
+      </article>
+      <article class="cell" data-agent="fraud_auditor" data-state="default">
+        <h3 class="cell__h">Fraud Auditor</h3>
+        <p class="cell__model">claude-sonnet-4.6</p>
+        <dl class="cell__dl">
+          <dt>Tokens in</dt><dd data-k="in">—</dd>
+          <dt>Tokens out</dt><dd data-k="out">—</dd>
+          <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
+        </dl>
+      </article>
+      <article class="cell" data-agent="gaap_classifier" data-state="default">
+        <h3 class="cell__h">GAAP Classifier</h3>
+        <p class="cell__model">glm-5.1</p>
+        <dl class="cell__dl">
+          <dt>Tokens in</dt><dd data-k="in">—</dd>
+          <dt>Tokens out</dt><dd data-k="out">—</dd>
+          <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
+        </dl>
+      </article>
+      <article class="cell" data-agent="provenance_signer" data-state="default">
+        <h3 class="cell__h">Provenance Signer</h3>
+        <p class="cell__model">claude-haiku-4.5</p>
+        <dl class="cell__dl">
+          <dt>Tokens in</dt><dd data-k="in">—</dd>
+          <dt>Tokens out</dt><dd data-k="out">—</dd>
+          <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
+        </dl>
+      </article>
+      <article class="cell cell--totals" data-agent="total" data-state="default">
+        <h3 class="cell__h">Total</h3>
+        <p class="cell__model">5 LLM calls · 1 BLAKE3 · 1 Ed25519 · 1 RFC 3161</p>
+        <dl class="cell__dl">
+          <dt>Tokens in</dt><dd data-k="in">—</dd>
+          <dt>Tokens out</dt><dd data-k="out">—</dd>
+          <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
+        </dl>
+      </article>
+    </div>
+  </section>
+
+  <!-- ───── Section 3 · Band transcript ───── -->
+  <section class="transcript" aria-labelledby="transcript-h">
+    <header class="transcript__head">
+      <p class="eyebrow">Step 03 · Band transcript</p>
+      <h2 id="transcript-h" class="transcript__h2">Agent @mention debate</h2>
+      <p class="transcript__lede">
+        Every handoff is a real Band message. The room id, agent ids, and timestamps are
+        the audit trail.
+      </p>
+    </header>
+    <ol class="transcript__list" id="transcript-list" aria-live="polite" aria-relevant="additions">
+      <li class="transcript__empty">No events yet — submit an invoice to start the debate.</li>
+    </ol>
+  </section>
+
+  <!-- ───── Section 4 · BAAAR HALT overlay (initially hidden) ───── -->
+  <div class="halt-overlay" id="halt-overlay" role="alertdialog" aria-labelledby="halt-h" aria-modal="true" hidden>
+    <div class="halt-overlay__card">
+      <header class="halt-overlay__head">
+        <p class="eyebrow eyebrow--halt">BAAAR HALT</p>
+        <h2 id="halt-h" class="halt-overlay__h2">WORKFLOW HALTED</h2>
+        <p class="halt-overlay__sub" id="halt-reason">—</p>
+      </header>
+      <dl class="halt-overlay__meta">
+        <dt>Trigger</dt><dd id="halt-trigger">—</dd>
+        <dt>Halt at</dt><dd id="halt-ts">—</dd>
+        <dt>Agent</dt><dd id="halt-agent">—</dd>
+        <dt>Tenant</dt><dd id="halt-tenant">—</dd>
+        <dt>Invoice</dt><dd id="halt-invoice">—</dd>
+      </dl>
+      <p class="halt-overlay__lede">
+        Download the receipt to verify the Ed25519 signature and BLAKE3 hash offline
+        with <code>themis-verify</code>.
+      </p>
+      <div class="halt-overlay__actions">
+        <button type="button" class="btn btn--halt" id="halt-download-btn">Download receipt</button>
+        <button type="button" class="btn btn--secondary" id="halt-dismiss-btn">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───── Section 5 · Evidence download + Compliance dashboard ───── -->
+  <section class="evidence" aria-labelledby="evidence-h">
+    <header class="evidence__head">
+      <p class="eyebrow">Step 04 · Evidence</p>
+      <h2 id="evidence-h" class="evidence__h2">Sealed packet, ready to verify offline</h2>
+      <p class="evidence__lede">
+        Ed25519 signature over BLAKE3(payload) · RFC 3161 timestamp from the TSA ·
+        Rekor v2 log anchor (when wired).
+      </p>
+    </header>
+    <div class="evidence__grid">
+      <article class="evidence__card" id="evidence-summary" data-state="empty">
+        <h3 class="evidence__h3">Packet summary</h3>
+        <dl class="evidence__dl">
+          <dt>Status</dt><dd data-k="status">—</dd>
+          <dt>Tenant</dt><dd data-k="tenant">—</dd>
+          <dt>Invoice</dt><dd data-k="invoice">—</dd>
+          <dt>Decisions</dt><dd data-k="decisions">—</dd>
+          <dt>Framework coverage</dt><dd data-k="coverage">—</dd>
+        </dl>
+        <div class="evidence__actions">
+          <button type="button" class="btn btn--primary" id="download-pdf-btn" disabled>Download PDF</button>
+          <button type="button" class="btn btn--secondary" id="download-json-btn" disabled>Download JSON</button>
+          <a class="btn btn--secondary" href="/compliance" id="compliance-link">Compliance dashboard</a>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ───── Ft7 Single-line footer ───── -->
+  <footer class="ft7">
+    <p class="ft7__line">
+      <span class="ft7__brand">THEMIS</span> ·
+      <span class="ft7__version" id="ft7-version">v0.1.0</span> ·
+      <span class="ft7__commit" id="ft7-commit">commit pending</span> ·
+      <a class="ft7__link" href="https://github.com/SuarezPM/apohara-themis">source</a> ·
+      <a class="ft7__link" href="/compliance">compliance</a> ·
+      <span class="ft7__license">MIT</span>
+    </p>
+  </footer>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -866,6 +866,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "themis-frontend"
+version = "0.1.0"
+
+[[package]]
 name = "themis-orchestrator"
 version = "0.1.0"
 dependencies = [

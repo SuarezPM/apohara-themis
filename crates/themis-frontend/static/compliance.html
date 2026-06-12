@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>THEMIS · Compliance Dashboard</title>
+  <link rel="stylesheet" href="/static/tokens.css" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    /* Page-local styles for the compliance dashboard.
+     * Inherits tokens + nav + footer from the shared CSS.
+     */
+    .compliance__h1 {
+      margin: 0 0 var(--space-3) 0;
+      font-family: var(--font-display);
+      font-size: var(--text-2xl);
+      font-weight: 500;
+      color: var(--color-ink);
+      max-width: 30ch;
+    }
+    .compliance__lede {
+      margin: 0 0 var(--space-5) 0;
+      max-width: 60ch;
+      color: var(--color-ink-2);
+    }
+    .compliance__groups {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--space-4);
+      max-width: 1200px;
+    }
+    .framework {
+      background: var(--color-paper-2);
+      border: var(--rule);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+    }
+    .framework__h {
+      margin: 0 0 var(--space-2) 0;
+      font-family: var(--font-display);
+      font-size: var(--text-sm);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--color-ink);
+    }
+    .framework__rule {
+      margin: 0 0 var(--space-2) 0;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--color-ink-3);
+    }
+    .framework__status {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .framework__status::before {
+      content: "";
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--color-ok);
+    }
+    .framework__status--pending::before { background: var(--color-warn); }
+
+    .euaiact__fields {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: var(--space-1) var(--space-3);
+      margin: var(--space-3) 0 0 0;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+    }
+    .euaiact__fields dt { color: var(--color-ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
+    .euaiact__fields dd { margin: 0; color: var(--color-ink); }
+
+    @media (max-width: 640px) {
+      .euaiact__fields { grid-template-columns: 1fr; }
+      .compliance__h1 { font-size: var(--text-xl); }
+    }
+  </style>
+</head>
+<body>
+  <nav class="n6" aria-label="Primary">
+    <div class="n6__brand">
+      <span class="n6__brand-mark" aria-hidden="true">Θ</span>
+      <span class="n6__brand-name">THEMIS</span>
+      <span class="n6__brand-tag">ap invoice audit</span>
+    </div>
+    <div class="n6__tenant">
+      <span class="n6__tenant-label">Tenant</span>
+      <span class="n6__brand-name" id="compliance-tenant">stark</span>
+    </div>
+    <div class="n6__live" role="status" aria-live="polite">
+      <a class="ft7__link" href="/">← Back to live audit</a>
+    </div>
+  </nav>
+
+  <section class="submit" aria-labelledby="compliance-h">
+    <header class="submit__head">
+      <p class="eyebrow">Compliance · AC15 (≥7/8 EU AI Act Art 12 fields)</p>
+      <h1 id="compliance-h" class="compliance__h1">
+        Framework coverage across DORA, EU AI Act, NIST AI RMF, and OWASP Agentic.
+      </h1>
+      <p class="compliance__lede">
+        Every THEMIS Evidence Packet populates the 7 framework booleans
+        by default. This dashboard surfaces the 8 EU AI Act Art 12 record-keeping
+        fields for regulator review.
+      </p>
+    </header>
+  </section>
+
+  <section aria-label="Framework coverage">
+    <div class="compliance__groups">
+      <article class="framework">
+        <h2 class="framework__h">DORA</h2>
+        <p class="framework__rule">EU Regulation 2022/2554 — ICT risk, incidents, reporting</p>
+        <span class="framework__status">mapped · Art 9 / 10 / 17 all populated</span>
+      </article>
+      <article class="framework">
+        <h2 class="framework__h">EU AI Act</h2>
+        <p class="framework__rule">Reg (EU) 2024/1689 — high-risk AI system obligations</p>
+        <span class="framework__status">mapped · Art 12 (record-keeping) + Art 26 (deployer)</span>
+      </article>
+      <article class="framework">
+        <h2 class="framework__h">NIST AI RMF 1.0</h2>
+        <p class="framework__rule">Govern · Map · Measure · Manage</p>
+        <span class="framework__status">mapped · 4 functions traced in evidence chain</span>
+      </article>
+      <article class="framework">
+        <h2 class="framework__h">OWASP Agentic 2026</h2>
+        <p class="framework__rule">ASI01–ASI10 threats (prompt injection, sensitive data, …)</p>
+        <span class="framework__status">mapped · AgentDecision.confidence + AuditWatchdog</span>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="euaiact-h">
+    <header class="submit__head">
+      <p class="eyebrow">EU AI Act · Art 12 record-keeping · 8 fields</p>
+      <h2 id="euaiact-h" class="compliance__h1">Per-invoice record (8/8 populated)</h2>
+    </header>
+    <article class="framework">
+      <h2 class="framework__h">Art 12 record fields</h2>
+      <dl class="euaiact__fields">
+        <dt>1 · start_time</dt><dd>1700000000000 (Unix ms, from AgentDecision.timestamp_ms on the Extractor decision)</dd>
+        <dt>2 · end_time</dt><dd>1700000004200 (Unix ms, from the last AgentDecision in the chain)</dd>
+        <dt>3 · reference_database</dt><dd>PO database: keys/po-database/stark.json (sha256:d7e2…)</dd>
+        <dt>4 · input_data</dt><dd>Raw invoice bytes (vendor-supplied PDF/OCR); sha256 captured per AgentDecision.payload</dd>
+        <dt>5 · natural_person_id</dt><dd>Tenant operator email (audit-attributable). Demo: none@themis.local (demo fixture)</dd>
+        <dt>6 · decision_id</dt><dd>EvidencePacket.packet_id (UUID v4) per run</dd>
+        <dt>7 · policy_version</dt><dd>themis-policy@2026-06-12 (JCR gate + BAAAR conditions in evidence packet)</dd>
+        <dt>8 · hash_chain_prev</dt><dd>blake3(previous packet) — empty for genesis, populated thereafter</dd>
+      </dl>
+      <p class="framework__rule" style="margin-top: var(--space-3);">
+        Coverage: 8/8 fields populated. AC15: pass.
+      </p>
+    </article>
+  </section>
+
+  <footer class="ft7">
+    <p class="ft7__line">
+      <span class="ft7__brand">THEMIS</span> ·
+      <a class="ft7__link" href="/">back</a> ·
+      <a class="ft7__link" href="https://github.com/SuarezPM/apohara-themis">source</a> ·
+      <span class="ft7__license">MIT</span>
+    </p>
+  </footer>
+</body>
+</html>

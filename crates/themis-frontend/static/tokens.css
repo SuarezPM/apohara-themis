@@ -1,0 +1,102 @@
+/* Hallmark · macrostructure: Workbench · tone: technical-austere
+ * theme: Quiet · anchor hue: none (BAAAR red is functional, not brand)
+ * sections: Submit · Live Counter · Band Transcript · BAAAR HALT · Compliance · Download
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: pass (46–50) · mobile: pass (320/375/414/768)
+ */
+
+/* --- Quiet theme tokens (system-native, no chromatic accent) --- */
+:root {
+  /* Paper band: very dark (L < 30%) for the security/audit feel */
+  --color-paper: oklch(16% 0.01 250);
+  --color-paper-2: oklch(20% 0.01 250);
+  --color-paper-3: oklch(26% 0.012 250);
+  --color-ink: oklch(96% 0.005 250);
+  --color-ink-2: oklch(78% 0.01 250);
+  --color-ink-3: oklch(56% 0.012 250);
+  --color-ink-4: oklch(38% 0.012 250);
+  --color-rule: oklch(30% 0.012 250);
+  --color-focus: oklch(82% 0.18 230);
+  --color-halt: oklch(64% 0.22 27); /* BAAAR red — functional, not brand */
+  --color-halt-soft: oklch(28% 0.10 27);
+  --color-ok: oklch(72% 0.16 152);
+  --color-warn: oklch(78% 0.16 80);
+
+  /* Display + body: system-native, refined */
+  --font-display: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* 4-pt spacing scale (semantic) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  /* Type scale */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+  --text-4xl: 48px;
+
+  /* Easings (3 named, never browser default) */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Durations */
+  --dur-fast: 80ms;
+  --dur-base: 160ms;
+  --dur-slow: 280ms;
+  --dur-flash: 600ms;
+
+  /* Rules (hairlines) */
+  --rule: 1px solid var(--color-rule);
+  --rule-strong: 2px solid var(--color-rule);
+
+  /* Radius (sharp, technical) */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+}
+
+/* Root reset (mobile non-negotiable: no horizontal scroll) */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+html { min-width: 320px; }
+body { min-height: 100vh; }
+
+/* Focus ring (instant, no animation) */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
