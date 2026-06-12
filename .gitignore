@@ -1,0 +1,60 @@
+# ─── Build artifacts ───────────────────────────────────────────────
+/target
+**/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# ─── Local state & archives (not for public consumption) ───────────
+# Pre-THEMIS development archive — kept locally for reference, never published
+/.archive/
+# OMC workflow state
+/.omc/
+# Session / IDE caches
+/.claude/settings.local.json
+/.claude/sessions/
+/.mcp.json.local
+
+# ─── Secrets (NEVER commit) ────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+/keys/
+/demo-tenant-keys/
+
+# ─── Demo evidence (built locally, regenerated for each demo run) ──
+/demo/expected-evidence/*.rekor
+/demo/expected-evidence/*.sig
+/demo/temp/
+
+# ─── IDE ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.helix/
+
+# ─── OS ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Coverage / test artifacts ─────────────────────────────────────
+/coverage
+/coverage.*
+*.lcov
+*.snap.new
+/test-output/
+/playwright-report/
+/playwright/.cache/
+/test-results/
+
+# ─── Local cache ───────────────────────────────────────────────────
+.cache/
+.turbo/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
