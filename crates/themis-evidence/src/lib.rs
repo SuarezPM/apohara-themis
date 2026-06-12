@@ -1,24 +1,35 @@
 //! themis-evidence — cryptographic Evidence Packet for THEMIS.
 //!
 //! Ed25519 signing (`ed25519-dalek`), BLAKE3 hash chain, RFC 3161
-//! timestamp (FreeTSA), Rekor v2 anchoring. Multi-tenant key
-//! isolation: 2 fictitious companies (Stark / Wayne) with distinct
-//! keypairs, baked at compile time via `include_bytes!` to survive
-//! Vercel's ephemeral filesystem.
+//! timestamp (mock TSA; real FreeTSA in production), Rekor v2
+//! anchoring (deferred to follow-up). Multi-tenant key isolation:
+//! 2 fictitious companies (Stark / Wayne) with distinct keypairs
+//! in `keys/{tenant}.ed25519`, mode 600.
 //!
-//! The `themis-verify` binary replaces `openssl dgst -sha512` for
-//! Ed25519 signatures (openssl does not list ed25519 in its digest
-//! registry, so the spec's original verify command was incorrect).
+//! The `themis-verify` binary (see `src/bin/verify.rs`) replaces
+//! `openssl dgst -sha512` for Ed25519 signatures (openssl does not
+//! list ed25519 in its digest registry, so the spec's original
+//! verify command was incorrect).
 //!
-//! Real impl arrives in the follow-up sprint (Phase C of the plan).
-//! This crate exists to anchor the workspace layout for US-001.
+//! ## Module map
+//!
+//! * **`signer.rs`** — `KeyPair` + `SignerService` (Ed25519)
+//! * **`chain.rs`** — `HashChain` (BLAKE3, append-only, tamper-evident)
+//! * **`timestamp.rs`** — `Timestamp` + `TimestampAuthority` trait + mock
+//! * **`packet.rs`** — `SealedPacket` + `EvidenceService`
+//! * **`bin/verify.rs`** — the offline-verify binary
 
 #![warn(missing_docs)]
 
-/// Crate version + name. Used by US-001 acceptance test.
+/// Crate version + name.
 pub fn version() -> &'static str {
     "themis-evidence"
 }
+
+pub mod chain;
+pub mod packet;
+pub mod signer;
+pub mod timestamp;
 
 #[cfg(test)]
 mod tests {
