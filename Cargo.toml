@@ -17,6 +17,8 @@ themis-orchestrator = { path = "crates/themis-orchestrator" }
 themis-agents = { path = "crates/themis-agents" }
 themis-evidence = { path = "crates/themis-evidence" }
 themis-band-client = { path = "crates/themis-band-client" }
+themis-compliance = { path = "crates/themis-compliance" }
+themis-frontend = { path = "crates/themis-frontend" }
 
 # External deps for orchestrator (US-007 concurrency scheduler)
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time", "sync"] }

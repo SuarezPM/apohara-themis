@@ -2,9 +2,8 @@
 
 use themis_agents::baaar::Outcome;
 use themis_agents::decision::DecisionType;
-use themis_orchestrator::packet::EvidencePacket;
 
-use crate::framework::{ComplianceMap, ComplianceMapper, Framework};
+use crate::framework::{ComplianceMap, ComplianceMapper, EvidencePacket, Framework};
 
 /// Maps an Evidence Packet to DORA's 3 sub-articles.
 pub struct DoraMapper;
@@ -61,7 +60,7 @@ impl ComplianceMapper for DoraMapper {
                 "art_17_incident_reporting",
                 serde_json::json!({
                     "outcome": "halt",
-                    "evidence_packet_id": packet.packet_id.to_string(),
+                    "evidence_packet_id": packet.packet_id,
                     "tenant_id": packet.tenant_id,
                     "invoice_id": packet.invoice_id,
                 }),
@@ -84,9 +83,31 @@ impl ComplianceMapper for DoraMapper {
 mod tests {
     use super::*;
     use themis_agents::baaar::BaaarReason;
-    use themis_agents::decision::AgentDecision;
-    use themis_orchestrator::packet::EvidencePacket;
-    use themis_agents::decision::DecisionType;
+    use themis_agents::decision::{AgentDecision, DecisionType};
+
+    /// Build an `EvidencePacket` for tests (the compliance-side
+    /// definition, NOT the orchestrator's).
+    fn ep(tenant: &str, dts: Vec<DecisionType>, outcome: Outcome) -> EvidencePacket {
+        EvidencePacket {
+            packet_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            tenant_id: tenant.to_string(),
+            invoice_id: "inv-001".to_string(),
+            agent_decisions: dts
+                .into_iter()
+                .map(|dt| AgentDecision {
+                    agent_id: "x".to_string(),
+                    tenant_id: tenant.to_string(),
+                    invoice_id: "inv-001".to_string(),
+                    decision_type: dt,
+                    confidence: 0.9,
+                    reasoning: "x".to_string(),
+                    timestamp_ms: 0,
+                    payload: serde_json::json!({}),
+                })
+                .collect(),
+            bbaaar_outcome: outcome,
+        }
+    }
 
     fn dec(dt: DecisionType, conf: f32) -> AgentDecision {
         AgentDecision {
@@ -103,13 +124,12 @@ mod tests {
 
     #[test]
     fn all_three_art_fields_populated_on_clean_packet() {
-        let m = DoraMapper.map(&EvidencePacket::new(
+        let m = DoraMapper.map(&ep(
             "stark",
-            "inv-001",
             vec![
-                dec(DecisionType::Extracted, 0.9),
-                dec(DecisionType::FraudAssessed, 0.85),
-                dec(DecisionType::WatchdogAlert, 0.92),
+                DecisionType::Extracted,
+                DecisionType::FraudAssessed,
+                DecisionType::WatchdogAlert,
             ],
             Outcome::Approve,
         ));
@@ -119,10 +139,9 @@ mod tests {
 
     #[test]
     fn halt_outcome_populates_art_17_with_incident_metadata() {
-        let m = DoraMapper.map(&EvidencePacket::new(
+        let m = DoraMapper.map(&ep(
             "stark",
-            "inv-001",
-            vec![dec(DecisionType::FraudAssessed, 0.95)],
+            vec![DecisionType::FraudAssessed],
             Outcome::Halt(BaaarReason::RiskScoreExceeded),
         ));
         let art_17 = m.fields.iter().find(|(n, _)| *n == "art_17_incident_reporting");
@@ -133,13 +152,11 @@ mod tests {
 
     #[test]
     fn missing_watchdog_adds_a_note() {
-        let m = DoraMapper.map(&EvidencePacket::new(
+        let m = DoraMapper.map(&ep(
             "stark",
-            "inv-001",
-            vec![dec(DecisionType::Extracted, 0.9)],
+            vec![DecisionType::Extracted],
             Outcome::Approve,
         ));
-        // Art 10 absent, but the mapper added a note.
         assert!(m.notes.iter().any(|n| n.contains("Art 10")));
     }
 }

@@ -3,7 +3,7 @@
 //! AC15 (EU AI Act Art 12 >= 7/8).
 
 use serde::Serialize;
-use themis_orchestrator::packet::EvidencePacket;
+use crate::framework::EvidencePacket;
 
 use crate::dora::DoraMapper;
 use crate::eu_ai_act::EuAiActMapper;
@@ -119,7 +119,7 @@ mod tests {
     use super::*;
     use themis_agents::baaar::Outcome;
     use themis_agents::decision::{AgentDecision, DecisionType};
-    use themis_orchestrator::packet::EvidencePacket;
+    use crate::framework::EvidencePacket;
 
     fn dec(tenant: &str, dt: DecisionType) -> AgentDecision {
         AgentDecision {

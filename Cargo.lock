@@ -850,7 +850,6 @@ dependencies = [
  "serde",
  "serde_json",
  "themis-agents",
- "themis-orchestrator",
 ]
 
 [[package]]
@@ -893,6 +892,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "themis-agents",
+ "themis-compliance",
  "themis-evidence",
  "thiserror",
  "tokio",

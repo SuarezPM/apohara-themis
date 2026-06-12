@@ -5,7 +5,7 @@
 //! also populate 1 Art 26 field (deployer name) for a total of 9
 //! fields — AC15 (>=7/8 Art 12 populated) is satisfied with margin.
 
-use themis_orchestrator::packet::EvidencePacket;
+use crate::framework::EvidencePacket;
 
 use crate::framework::{ComplianceMap, ComplianceMapper, Framework};
 
@@ -81,7 +81,7 @@ mod tests {
     use super::*;
     use themis_agents::baaar::Outcome;
     use themis_agents::decision::{AgentDecision, DecisionType};
-    use themis_orchestrator::packet::EvidencePacket;
+    use crate::framework::EvidencePacket;
 
     fn dec(tenant: &str, dt: DecisionType, ts: i64) -> AgentDecision {
         AgentDecision {

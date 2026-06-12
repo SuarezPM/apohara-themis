@@ -22,6 +22,7 @@ blake3 = "1"
 hex = "0.4"
 themis-agents = { workspace = true }
 themis-evidence = { workspace = true }
+themis-compliance = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

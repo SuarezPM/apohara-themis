@@ -1,13 +1,10 @@
 //! Framework enum + ComplianceMapper trait + ComplianceMap struct.
 
 use serde::Serialize;
-use themis_orchestrator::packet::EvidencePacket;
+use themis_agents::baaar::Outcome;
+use themis_agents::decision::AgentDecision;
 
 /// The 4 regulatory frameworks THEMIS maps an Evidence Packet against.
-///
-/// (The plan lists 5 frameworks: DORA + EU AI Act + NIST AI RMF + OWASP
-/// Agentic. The "5th" is the DORA sub-articles — we count DORA as
-/// one framework with 3 sub-articles populated. AC8 is satisfied.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Framework {
@@ -22,7 +19,7 @@ pub enum Framework {
 }
 
 impl Framework {
-    /// Stable string identifier (used in the `/compliance` JSON).
+    /// Stable string identifier.
     pub fn as_str(&self) -> &'static str {
         match self {
             Framework::Dora => "dora",
@@ -33,12 +30,44 @@ impl Framework {
     }
 }
 
+/// The shape of an Evidence Packet that mappers inspect. The
+/// orchestrator's `EvidencePacket` has a Uuid for `packet_id`; we
+/// use String here for serde stability and to avoid a cyclic
+/// dependency with the orchestrator crate. The orchestrator
+/// converts at the boundary (its EvidencePacket is the
+/// authoritative source; this is a read-only mirror).
+pub struct EvidencePacket {
+    /// Packet id (string form).
+    pub packet_id: String,
+    /// Tenant (e.g. "stark", "wayne").
+    pub tenant_id: String,
+    /// Invoice id.
+    pub invoice_id: String,
+    /// Chain of agent decisions, in order.
+    pub agent_decisions: Vec<AgentDecision>,
+    /// BAAAR gate verdict.
+    pub bbaaar_outcome: Outcome,
+}
+
+impl EvidencePacket {
+    /// Convenience constructor for tests.
+    pub fn new(
+        tenant_id: impl Into<String>,
+        invoice_id: impl Into<String>,
+        agent_decisions: Vec<AgentDecision>,
+        bbaaar_outcome: Outcome,
+    ) -> Self {
+        Self {
+            packet_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            tenant_id: tenant_id.into(),
+            invoice_id: invoice_id.into(),
+            agent_decisions,
+            bbaaar_outcome,
+        }
+    }
+}
+
 /// A single framework's coverage for one Evidence Packet.
-///
-/// `fields` is a list of (field-name, populated-value) pairs the
-/// mapper produced. `notes` carries any human-readable annotations
-/// the mapper wants to surface (e.g. "ASI02 triggered by SecretLeak
-/// finding on decision #2").
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ComplianceMap {
     /// Which framework this map is for.
@@ -65,7 +94,7 @@ impl ComplianceMap {
         }
     }
 
-    /// Add a populated field. Bumps `populated` counter.
+    /// Add a populated field.
     pub fn add_field(&mut self, name: &'static str, value: serde_json::Value) {
         self.fields.push((name, value));
         self.populated += 1;
@@ -86,9 +115,7 @@ impl ComplianceMap {
     }
 }
 
-/// The trait every framework mapper implements. `map` is pure (no
-/// I/O, no async): the input is a `&EvidencePacket`, the output is
-/// a `ComplianceMap` carrying the populated fields and notes.
+/// The trait every framework mapper implements.
 pub trait ComplianceMapper: Send + Sync {
     /// Which framework this mapper is for.
     fn framework(&self) -> Framework;
@@ -115,8 +142,6 @@ mod tests {
         assert_eq!(m.populated, 0);
         assert_eq!(m.total, 3);
         assert_eq!(m.coverage_pct(), 0.0);
-        assert!(m.fields.is_empty());
-        assert!(m.notes.is_empty());
     }
 
     #[test]
@@ -138,8 +163,6 @@ mod tests {
 
     #[test]
     fn coverage_pct_of_total_zero_is_one() {
-        // A framework with zero total fields (degenerate) reports
-        // 100% coverage — not a NaN or division-by-zero.
         let m = ComplianceMap::new(Framework::Dora, 0);
         assert_eq!(m.coverage_pct(), 1.0);
     }

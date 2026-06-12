@@ -2,7 +2,7 @@
 
 use themis_agents::baaar::{BaaarReason, FindingKind, Outcome};
 use themis_agents::decision::DecisionType;
-use themis_orchestrator::packet::EvidencePacket;
+use crate::framework::EvidencePacket;
 
 use crate::framework::{ComplianceMap, ComplianceMapper, Framework};
 
@@ -120,7 +120,7 @@ mod tests {
     use super::*;
     use themis_agents::baaar::Outcome;
     use themis_agents::decision::{AgentDecision, DecisionType};
-    use themis_orchestrator::packet::EvidencePacket;
+    use crate::framework::EvidencePacket;
 
     fn dec(dt: DecisionType, payload: serde_json::Value) -> AgentDecision {
         AgentDecision {
