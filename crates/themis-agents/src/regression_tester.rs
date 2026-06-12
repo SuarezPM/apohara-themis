@@ -115,7 +115,6 @@ impl Agent for RegressionTester {
 }
 
 fn verify_ed25519(public_key_hex: &str, message: &[u8], signature_hex: &str) -> bool {
-    use ed25519_dalek::Verifier;
 
     let pk_bytes = match hex::decode(public_key_hex) {
         Ok(b) => b,

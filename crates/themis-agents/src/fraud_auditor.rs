@@ -109,6 +109,11 @@ impl Agent for FraudAuditor {
     }
 }
 
+// Re-export FindingKind for convenience. MUST appear before any
+// #[cfg(test)] mod tests; clippy's `items-after-test-module` lint
+// flags it otherwise.
+pub use crate::baaar::FindingKind as PublicFindingKind;
+
 const FRAUD_AUDITOR_SYSTEM_PROMPT: &str = "\
 You are the Fraud Auditor agent in THEMIS. Given the upstream \
 decisions for an invoice, produce a JSON object matching this schema:
@@ -264,6 +269,3 @@ mod tests {
         assert!(matches!(err, AgentError::LlmUnavailable(_)));
     }
 }
-
-// Re-export FindingKind for convenience.
-pub use crate::baaar::FindingKind as PublicFindingKind;
