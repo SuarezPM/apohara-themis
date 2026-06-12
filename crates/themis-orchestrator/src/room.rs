@@ -132,7 +132,7 @@ impl BandRoom for MockBandRoom {
         ));
         self.rooms
             .entry(room_id)
-            .or_insert_with(|| MockRoom {
+            .or_insert(MockRoom {
                 owner_tenant: tenant_id.to_string(),
                 history: Vec::new(),
             });
@@ -157,12 +157,14 @@ impl BandRoom for MockBandRoom {
                 target_tenant: entry.owner_tenant.clone(),
             });
         }
-        entry.history.push(BandMessage {
+        let ts = chrono::Utc::now().timestamp_millis();
+        let msg = BandMessage {
             from: from_agent.to_string(),
             body: body.to_string(),
             mentions,
-            ts_ms: chrono::Utc::now().timestamp_millis(),
-        });
+            ts_ms: ts,
+        };
+        entry.history.push(msg);
         Ok(())
     }
 

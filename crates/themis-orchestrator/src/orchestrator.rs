@@ -14,7 +14,6 @@ use thiserror::Error;
 use themis_agents::baaar::{BaaarGate, Outcome};
 use themis_agents::decision::AgentDecision;
 use themis_agents::traits::Agent;
-use uuid::Uuid;
 
 use crate::packet::{EvidencePacket, SignedPacket};
 use crate::room::BandRoom;
@@ -54,6 +53,10 @@ pub struct Orchestrator {
     state_machines: DashMap<String, StateMachine>,
     rooms: Arc<dyn BandRoom>,
     agents: HashMap<String, Arc<dyn Agent>>,
+    /// Kept for future per-agent LLM routing (see US-O09 follow-up).
+    /// Currently the agents carry their own LLM, so this is
+    /// consulted only via `self.router` reads in tests.
+    #[allow(dead_code)]
     router: LlmBackendRouter,
     baaar: BaaarGate,
     tenants: Arc<TenantRegistry>,
@@ -534,7 +537,6 @@ mod tests {
     async fn ac4_baaar_10_of_10_deterministic() {
         let rooms: Arc<dyn BandRoom> = MockBandRoom::new().into_arc();
         let tenants = Arc::new(TenantRegistry::with_default_tenants());
-        let router = LlmBackendRouter::with_default_routing(HashMap::new());
         let mut halt_count = 0;
         for i in 0..10 {
             let mut agents: HashMap<String, Arc<dyn Agent>> = HashMap::new();

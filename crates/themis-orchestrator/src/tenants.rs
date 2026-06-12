@@ -129,13 +129,13 @@ impl TenantRegistry {
         }
         let key = (tenant_id.to_string(), invoice_id.to_string());
         // entry().or_insert_with returns the existing RoomId if
-        // present, else inserts a new one. DashMap guarantees
-        // atomicity across concurrent callers.
-        let room_id = self
-            .rooms
-            .entry(key)
-            .or_insert_with(RoomId::new)
-            .clone();
+        // present, else constructs a new one. DashMap guarantees
+        // atomicity across concurrent callers. RoomId is Copy.
+        // The closure is needed (the no-closure variant trips the
+        // reverse clippy lint); the manual allow documents the
+        // intentional choice.
+        #[allow(clippy::unwrap_or_default)]
+        let room_id = *self.rooms.entry(key).or_insert_with(RoomId::new);
         Ok(room_id)
     }
 
