@@ -14,7 +14,7 @@
 | **C — Orchestrator + Compliance** | State machine + 4 mappers + Rekor | ✅ DONE | `themis-orchestrator` 1 crate, `themis-compliance` 1 crate, 4 framework mappers + `ComplianceService` |
 | **D — Frontend + Demo data** | HTML+JS, `themis.apohara.dev` deploy, 5 Stanford invoices | ✅ DONE | `themis-frontend` (US-48/49/50) + `fixtures/demo-invoices/{stark,wayne}-*.json` (4 HALT + 1 APPROVED) + integration test 7/7 verde |
 | **E — Rekor + Multi-tenant** | Rekor v2 client, 2 trust domains, baked keys | ✅ DONE | `themis-evidence::rekor` (Mock + Cosign, 8 tests), `for_tenant("stark"|"wayne")` with `include_bytes!` baked Ed25519 seeds (5 tests) |
-| **F — Deploy + Pitch** | Deploy real, video 5min, deck | 🟡 PARTIAL | AC measurement harness (`themis-bench` + `measure_acs.sh`) emits `ac-measurements.json`. Video + pitch deferred (post-demo) |
+| **F — Deploy + Pitch** | Deploy real, video 5min, deck | 🟡 PARTIAL | AC measurement harness (`themis-bench` + `measure_acs.sh`) emits `ac-measurements.json`. Video + pitch deferred (post-demo). Sprint 2 (ralph-rekor-polish): Rekor wire-up end-to-end + PDF generator + DORA Art 17 + Band idempotency + cargo-deny pre-commit hook. |
 
 ## User Stories completadas (verificables via `git log`)
 
@@ -38,8 +38,14 @@
 | US-O11 | `29bf277` | `orchestrator`: HTTP layer (axum 0.7, `Arc<AppState>`) |
 | US-48..US-50 | `60c408a` | `frontend`: `themis-frontend` via hallmark design skill |
 | US-007 deploy | `b8ce460` | `deploy`: Vercel static-only para `themis.apohara.dev` |
+| US-R02 | `33bbc4d` | `orchestrator,evidence`: Rekor anchoring wired into `process_invoice` |
+| US-P01 | `47c65a4` | `orchestrator`: `printpdf` PDF generator + `GET /packets/:id/pdf` (AC12) |
+| US-C08 | `4d29f58` | `compliance`: DORA Art 17 fields populated (R7) |
+| US-B01 | `6dcb028` | `scripts`: Band bootstrap idempotency fix |
+| US-X02 | `2351410` | `build,security`: cargo-deny + AC11 pre-commit hook (R11) |
+| US-X02-fix | `d70584a` | `chore(security)`: relax deny.toml wildcards + multiple-versions |
 
-**20 commits `feat:*` + 3 `fix/chore`. 18 US-IDs distintos (algunos cubren rangos).**
+**25 commits `feat:*` + 6 `fix/chore` + 1 docs. 24 US-IDs distintos (algunos cubren rangos).**
 
 ## Pendiente — bloqueado por la sesión del cierre abrupto (12 jun ~22:00)
 
