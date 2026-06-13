@@ -115,7 +115,7 @@ impl RekorClient for MockRekorClient {
     async fn anchor(
         &self,
         blake3_hash_hex: &str,
-        tenant_id: &str,
+        _tenant_id: &str,
     ) -> Result<RekorEntry, RekorError> {
         // Derive UUID from the hash so it's stable across calls
         // (real Rekor would issue a random UUID; this is mock-only).
@@ -125,7 +125,7 @@ impl RekorClient for MockRekorClient {
         let idx = self.log_index.fetch_add(1, Ordering::SeqCst);
         let body_b64 = base64_encode(blake3_hash_hex.as_bytes());
         let integrated_time = chrono::Utc::now().timestamp();
-        let bundle_url = format!("{}/{}?tenant={}", self.url_base, uuid, tenant_id);
+        let bundle_url = format!("{}/{}?tenant={}", self.url_base, uuid, _tenant_id);
 
         Ok(RekorEntry {
             uuid,
@@ -189,7 +189,7 @@ impl RekorClient for CosignRekorClient {
     async fn anchor(
         &self,
         blake3_hash_hex: &str,
-        tenant_id: &str,
+        _tenant_id: &str,
     ) -> Result<RekorEntry, RekorError> {
         if !self.is_available().await {
             return Err(RekorError::CosignMissing);
