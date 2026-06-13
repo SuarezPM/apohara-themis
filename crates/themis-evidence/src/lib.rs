@@ -16,6 +16,7 @@
 //! * **`signer.rs`** — `KeyPair` + `SignerService` (Ed25519)
 //! * **`chain.rs`** — `HashChain` (BLAKE3, append-only, tamper-evident)
 //! * **`timestamp.rs`** — `Timestamp` + `TimestampAuthority` trait + mock
+//! * **`rekor.rs`** — `RekorClient` trait + `MockRekorClient` + `CosignRekorClient` (ADR-002)
 //! * **`packet.rs`** — `SealedPacket` + `EvidenceService`
 //! * **`bin/verify.rs`** — the offline-verify binary
 
@@ -28,6 +29,7 @@ pub fn version() -> &'static str {
 
 pub mod chain;
 pub mod packet;
+pub mod rekor;
 pub mod signer;
 pub mod timestamp;
 
