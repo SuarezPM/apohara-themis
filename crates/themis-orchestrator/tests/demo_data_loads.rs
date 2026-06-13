@@ -8,47 +8,32 @@
 //!
 //! Run with: `cargo test -p themis-orchestrator --test demo_data_loads`
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use themis_agents::llm::{LlmResponse, MockLlmProvider};
 use themis_orchestrator::orchestrator::Orchestrator;
-use themis_orchestrator::room::MockBandRoom;
-use themis_orchestrator::tenants::TenantRegistry;
 use themis_orchestrator::test_support::{
-    build_stub_agents, expected_outcome_string, fraud_auditor_payload, DemoInvoice,
+    build_orchestrator, expected_outcome_string, DemoInvoice,
 };
+use themis_evidence::rekor::MockRekorClient;
 
+/// Build an orchestrator WITHOUT a Rekor client. Used by the
+/// original 7 fixture contract tests (US-D01) — these don't care
+/// about anchoring, only the verdict distribution.
 fn orchestrator_for(fixture: &DemoInvoice) -> Orchestrator {
-    let mock_llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(
-        MockLlmProvider::new("mock-fixture")
-            .with_response(
-                &fixture.invoice_id,
-                LlmResponse {
-                    text: serde_json::to_string(&fixture.extracted).unwrap(),
-                    input_tokens: 256,
-                    output_tokens: 128,
-                    model_id: "mock-fixture".to_string(),
-                },
-            )
-            .with_response("assess_fraud_risk", {
-                LlmResponse {
-                    text: fraud_auditor_payload(fixture),
-                    input_tokens: 256,
-                    output_tokens: 64,
-                    model_id: "mock-fixture".to_string(),
-                }
-            })
-            .with_default(themis_orchestrator::test_support::stub_default_response(
-                "mock-fixture",
-            )),
-    );
+    build_orchestrator(fixture, None, None)
+}
 
-    let agents = build_stub_agents(mock_llm, None);
-    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
-    let tenants = Arc::new(TenantRegistry::with_default_tenants());
-    let router = themis_orchestrator::router::LlmBackendRouter::with_default_routing(HashMap::new());
-    Orchestrator::new(rooms, agents, router, tenants)
+/// Build an orchestrator WITH a `MockRekorClient` for the Rekor
+/// wire-up tests (US-R02). The mock is deterministic (UUID derived
+/// from BLAKE3 hash) so the assertions are stable.
+fn orchestrator_with_rekor(fixture: &DemoInvoice) -> (Orchestrator, Arc<MockRekorClient>) {
+    let rekor: Arc<dyn themis_evidence::rekor::RekorClient> =
+        Arc::new(MockRekorClient::new());
+    // Recover the inner Arc to expose the log_index counter in
+    // tests; the dyn-trait API doesn't give us back the concrete
+    // type, so we re-create one for the counter.
+    let orch = build_orchestrator(fixture, None, Some(rekor));
+    (orch, Arc::new(MockRekorClient::new()))
 }
 
 fn load_fixture(name: &str) -> DemoInvoice {
@@ -188,4 +173,91 @@ async fn distribution_4_halt_1_approved() {
 fn _exercise_expected_outcome_string() -> &'static str {
     let f = load_fixture("stark-001.json");
     expected_outcome_string(&f)
+}
+
+// --- US-R02: Rekor anchoring wired into process_invoice ---
+
+#[tokio::test]
+async fn rekor_entry_populated_when_orchestrator_has_rekor_client() {
+    let f = load_fixture("wayne-002.json");
+    let (orch, _) = orchestrator_with_rekor(&f);
+    let sp = orch
+        .process_invoice(&f.tenant_id, &f.invoice_id, b"raw".to_vec())
+        .await
+        .unwrap();
+    let entry = sp
+        .rekor_entry
+        .as_ref()
+        .expect("rekor_entry should be Some when orchestrator has a Rekor client");
+    // The mock derives the UUID from the BLAKE3 hash and embeds
+    // the tenant in the bundle_url.
+    assert!(entry.uuid.starts_with("mock-uuid-"));
+    assert!(
+        entry.bundle_url.contains("tenant=wayne"),
+        "bundle_url should embed tenant: got {}",
+        entry.bundle_url
+    );
+    assert_eq!(entry.log_index, 0, "first anchor in a fresh mock → 0");
+}
+
+#[tokio::test]
+async fn rekor_entry_absent_when_orchestrator_has_no_rekor_client() {
+    let f = load_fixture("wayne-002.json");
+    // orchestrator_for() builds without a Rekor client — back-compat.
+    let orch = orchestrator_for(&f);
+    let sp = orch
+        .process_invoice(&f.tenant_id, &f.invoice_id, b"raw".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        sp.rekor_entry.is_none(),
+        "rekor_entry should be None when no Rekor client is configured"
+    );
+}
+
+#[tokio::test]
+async fn rekor_anchor_uses_packets_blake3_hash() {
+    let f = load_fixture("stark-001.json");
+    let (orch, _) = orchestrator_with_rekor(&f);
+    let sp = orch
+        .process_invoice(&f.tenant_id, &f.invoice_id, b"raw".to_vec())
+        .await
+        .unwrap();
+    let entry = sp.rekor_entry.as_ref().unwrap();
+    // The mock stores base64(blake3_hash_hex) in body_b64. Decode
+    // it and verify it matches the packet's blake3_hash_hex.
+    use base64::Engine;
+    let body = base64::engine::general_purpose::STANDARD
+        .decode(&entry.body_b64)
+        .expect("body_b64 is valid base64");
+    let body_str = String::from_utf8(body).expect("body is utf-8");
+    assert_eq!(body_str, sp.blake3_hash_hex);
+}
+
+#[tokio::test]
+async fn rekor_anchors_all_5_fixtures_end_to_end() {
+    for name in [
+        "stark-001.json",
+        "stark-002.json",
+        "stark-003.json",
+        "wayne-001.json",
+        "wayne-002.json",
+    ] {
+        let f = load_fixture(name);
+        let (orch, _) = orchestrator_with_rekor(&f);
+        let sp = orch
+            .process_invoice(&f.tenant_id, &f.invoice_id, b"raw".to_vec())
+            .await
+        .unwrap();
+        assert!(
+            sp.rekor_entry.is_some(),
+            "fixture {name} should produce a SignedPacket with rekor_entry populated"
+        );
+        let entry = sp.rekor_entry.as_ref().unwrap();
+        assert!(
+            entry.bundle_url.contains(&format!("tenant={}", f.tenant_id)),
+            "fixture {name}: bundle_url should embed tenant={}",
+            f.tenant_id
+        );
+    }
 }

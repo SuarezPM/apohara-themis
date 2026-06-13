@@ -48,7 +48,9 @@ pub enum OrchestratorError {
 
 /// The orchestrator. Holds a per-invoice state machine map (so
 /// concurrent invoices don't contend), a `BandRoom`, the 8 agents,
-/// the LLM router, the BAAAR gate, and the tenant registry.
+/// the LLM router, the BAAAR gate, the tenant registry, and an
+/// optional Rekor transparency-log client for anchoring the sealed
+/// packet's BLAKE3 hash.
 pub struct Orchestrator {
     state_machines: DashMap<String, StateMachine>,
     rooms: Arc<dyn BandRoom>,
@@ -60,6 +62,12 @@ pub struct Orchestrator {
     router: LlmBackendRouter,
     baaar: BaaarGate,
     tenants: Arc<TenantRegistry>,
+    /// Optional Rekor client. If `Some`, every `process_invoice`
+    /// run anchors the packet's BLAKE3 hash in the transparency
+    /// log and stores the entry in `SignedPacket.rekor_entry`.
+    /// If `None`, the anchor step is skipped (back-compat for
+    /// tests / mock-only paths that don't need the log).
+    rekor: Option<Arc<dyn themis_evidence::rekor::RekorClient>>,
 }
 
 impl std::fmt::Debug for Orchestrator {
@@ -67,17 +75,32 @@ impl std::fmt::Debug for Orchestrator {
         f.debug_struct("Orchestrator")
             .field("agents", &self.agents.keys().collect::<Vec<_>>())
             .field("tenants", &"Arc<TenantRegistry>")
+            .field("rekor", &self.rekor.as_ref().map(|_| "Some(Arc<RekorClient>)"))
             .finish()
     }
 }
 
 impl Orchestrator {
-    /// Build a new orchestrator. Caller provides all the wiring.
+    /// Build a new orchestrator without a Rekor client. Equivalent
+    /// to `new_with_rekor(..., None)`.
     pub fn new(
         rooms: Arc<dyn BandRoom>,
         agents: HashMap<String, Arc<dyn Agent>>,
         router: LlmBackendRouter,
         tenants: Arc<TenantRegistry>,
+    ) -> Self {
+        Self::new_with_rekor(rooms, agents, router, tenants, None)
+    }
+
+    /// Build a new orchestrator with an optional Rekor client.
+    /// Pass `Some(client)` to enable end-to-end anchoring on every
+    /// `process_invoice` run; `None` to skip the anchor step.
+    pub fn new_with_rekor(
+        rooms: Arc<dyn BandRoom>,
+        agents: HashMap<String, Arc<dyn Agent>>,
+        router: LlmBackendRouter,
+        tenants: Arc<TenantRegistry>,
+        rekor: Option<Arc<dyn themis_evidence::rekor::RekorClient>>,
     ) -> Self {
         Self {
             state_machines: DashMap::new(),
@@ -86,6 +109,7 @@ impl Orchestrator {
             router,
             baaar: BaaarGate::new(),
             tenants,
+            rekor,
         }
     }
 
@@ -259,6 +283,9 @@ impl Orchestrator {
 
         let packet = self.assemble(tenant_id, invoice_id, &decisions, bbaaar_outcome);
         let signed = self.sign(packet, tenant_id);
+        // Anchor the BLAKE3 hash in Rekor (if a client is configured).
+        // Closes the demo data → evidence → Rekor chain end-to-end.
+        let signed = self.anchor_in_rekor(signed, tenant_id).await;
 
         // Cache the state machine for telemetry (in production
         // orchestrators expose this via /state/:id).
@@ -297,6 +324,36 @@ impl Orchestrator {
             .collect();
         let signature_hex = hex::encode(sig_input_padded);
         SignedPacket::wrap(packet, signature_hex, public_key_hex)
+    }
+
+    /// Anchor a `SignedPacket`'s BLAKE3 hash in Rekor and return
+    /// the same packet with `rekor_entry` populated. If no Rekor
+    /// client is configured or the anchor fails, returns the
+    /// input unchanged (graceful degradation for the demo path).
+    async fn anchor_in_rekor(
+        &self,
+        signed: SignedPacket,
+        tenant_id: &str,
+    ) -> SignedPacket {
+        let Some(rekor) = self.rekor.as_ref() else {
+            return signed;
+        };
+        let blake3_hash_hex = signed.blake3_hash_hex.clone();
+        match rekor.anchor(&blake3_hash_hex, tenant_id).await {
+            Ok(entry) => SignedPacket::wrap_with_rekor(
+                signed.packet,
+                signed.signature_hex,
+                signed.public_key_hex,
+                entry,
+            ),
+            Err(e) => {
+                // Don't fail the whole run if Rekor is unavailable
+                // (e.g. cosign missing on the demo machine); just
+                // log and skip the anchor.
+                eprintln!("[warn] Rekor anchor failed for {tenant_id}: {e}");
+                signed
+            }
+        }
     }
 
     /// Look up a stored state machine for a (tenant, invoice).

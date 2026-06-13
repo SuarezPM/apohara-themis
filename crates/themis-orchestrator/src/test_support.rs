@@ -22,8 +22,12 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use themis_agents::decision::{AgentDecision, AgentError, DecisionType};
-use themis_agents::llm::{LlmBackend, LlmRequest, LlmResponse};
+use themis_agents::llm::{LlmBackend, LlmRequest, LlmResponse, MockLlmProvider};
 use themis_agents::traits::{Agent, AgentContext};
+use themis_evidence::rekor::RekorClient;
+use crate::orchestrator::Orchestrator;
+use crate::room::MockBandRoom;
+use crate::tenants::TenantRegistry;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DemoInvoice {
@@ -241,4 +245,38 @@ pub fn build_stub_agents(
         );
     }
     agents
+}
+
+/// Build a fully-wired orchestrator with the 5-fixture mock LLM
+/// and an optional Rekor client. Centralized for the integration
+/// test (`tests/demo_data_loads.rs`) and the bench binary.
+pub fn build_orchestrator(
+    f: &DemoInvoice,
+    counter: Option<Arc<AtomicU32>>,
+    rekor: Option<Arc<dyn RekorClient>>,
+) -> Orchestrator {
+    let mock_llm: Arc<dyn LlmBackend> = Arc::new(
+        MockLlmProvider::new("mock-test")
+            .with_response(
+                &f.invoice_id,
+                LlmResponse {
+                    text: serde_json::to_string(&f.extracted).unwrap(),
+                    input_tokens: 256,
+                    output_tokens: 128,
+                    model_id: "mock-test".to_string(),
+                },
+            )
+            .with_response("assess_fraud_risk", LlmResponse {
+                text: fraud_auditor_payload(f),
+                input_tokens: 256,
+                output_tokens: 64,
+                model_id: "mock-test".to_string(),
+            })
+            .with_default(stub_default_response("mock-test")),
+    );
+    let agents = build_stub_agents(mock_llm, counter);
+    let rooms: Arc<dyn crate::room::BandRoom> = MockBandRoom::new().into_arc();
+    let tenants = Arc::new(TenantRegistry::with_default_tenants());
+    let router = crate::router::LlmBackendRouter::with_default_routing(HashMap::new());
+    Orchestrator::new_with_rekor(rooms, agents, router, tenants, rekor)
 }

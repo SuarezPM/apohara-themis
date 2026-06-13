@@ -143,6 +143,12 @@ pub struct SignedPacket {
     pub public_key_hex: String,
     /// Hex-encoded BLAKE3 hash of the packet.
     pub blake3_hash_hex: String,
+    /// Rekor transparency-log entry for this packet (if anchoring
+    /// was enabled at orchestrator construction time). `None` if
+    /// the orchestrator was built without a Rekor client (back-compat
+    /// for the demo / mock-only path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rekor_entry: Option<themis_evidence::rekor::RekorEntry>,
 }
 
 impl SignedPacket {
@@ -154,6 +160,25 @@ impl SignedPacket {
             signature_hex,
             public_key_hex,
             blake3_hash_hex,
+            rekor_entry: None,
+        }
+    }
+
+    /// Wrap an `EvidencePacket` with a signature + hash + Rekor entry.
+    /// Used by the orchestrator when a Rekor client is configured.
+    pub fn wrap_with_rekor(
+        packet: EvidencePacket,
+        signature_hex: String,
+        public_key_hex: String,
+        rekor_entry: themis_evidence::rekor::RekorEntry,
+    ) -> Self {
+        let blake3_hash_hex = packet.blake3_hash();
+        Self {
+            packet,
+            signature_hex,
+            public_key_hex,
+            blake3_hash_hex,
+            rekor_entry: Some(rekor_entry),
         }
     }
 }
