@@ -10,7 +10,9 @@ on:
 permissions:
   contents: read
   security-events: write
-  # CodeQL needs id-token for the SARIF upload step.
+  actions: read
+  checks: write
+  # id-token: write required for the CodeQL bundle setup (OIDC).
   id-token: write
 
 jobs:
