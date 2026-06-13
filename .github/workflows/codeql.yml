@@ -3,15 +3,41 @@ on:
   push:
     branches: [main]
 
+# Note: we keep this minimal. Rust is a public-preview language
+# for CodeQL, so the analyze step builds the rust crate tree
+# from source to extract the AST. With a 6-crate workspace,
+# the build needs >30 min on the free runner; we cap with
+# timeout-minutes: 60. If the build still times out, the
+# follow-up is to split into a 'codeql build' job that caches
+# the build with Swatinem/rust-cache and a separate 'analyze'
+# job.
 permissions: {}
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust]
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - uses: github/codeql-action/init@v3
         with:
-          languages: rust
+          languages: ${{ matrix.language }}
+          # Use only the security queries; the 'quality' set
+          # includes lints that don't apply to Rust (public
+          # preview) and they fail the analyze step.
+          queries: security-extended
       - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+          # Don't fail the workflow on warnings — CodeQL's
+          # Rust support is public preview and emits many
+          # model-fidelity warnings that we want surfaced but
+          # not blocking.
+          # (The 'fail-on-error' default is 'true' for SARIF
+          # upload, which is what we want; we just don't add
+          # an extra 'severity-threshold' gate.)
