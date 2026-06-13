@@ -1,15 +1,34 @@
 //! Ed25519 signer + multi-tenant key file IO.
 //!
-//! Keys live in `keys/{tenant}.ed25519` as 32-byte seeds. On first
-//! use, `SignerService::new` generates the seed via OsRng and
-//! writes it with mode 0600. Subsequent runs read the same file
-//! and reproduce the keypair deterministically.
+//! Two ways to construct a `SignerService`:
+//!
+//! - **`from_seed(tenant, [u8; 32])`** — in-memory seed (tests +
+//!   the verifier binary's deterministic replay).
+//! - **`new(tenant, key_dir)`** — reads `keys/{tenant}.ed25519`
+//!   from disk (creates it with random bytes + chmod 600 if
+//!   missing). This is the legacy path; suitable for dev machines
+//!   with persistent FS.
+//! - **`for_tenant(tenant)`** — compile-time baked key via
+//!   `include_bytes!`. The 2 fixture tenants (stark, wayne) have
+//!   their 32-byte seeds committed to `keys/{tenant}.ed25519`
+//!   and embedded in the binary. **This is the deployment path**
+//!   (R4 + R8 mitigation: Vercel's ephemeral FS cannot persist
+//!   generated keys across deploys; baked keys survive that).
 
 use std::path::Path;
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::RngCore;
 use thiserror::Error;
+
+/// Stark's baked-in Ed25519 seed (32 bytes, hex sha256 of
+/// `themis-stark-tenant-baked-seed-v1`). Embedded at compile time
+/// via `include_bytes!`; survives Vercel's ephemeral FS.
+pub static STARK_SEED: [u8; 32] = *include_bytes!("../keys/stark.ed25519");
+
+/// Wayne's baked-in Ed25519 seed (32 bytes, hex sha256 of
+/// `themis-wayne-tenant-baked-seed-v1`).
+pub static WAYNE_SEED: [u8; 32] = *include_bytes!("../keys/wayne.ed25519");
 
 /// An Ed25519 keypair (signing + verifying).
 #[derive(Debug, Clone)]
@@ -53,6 +72,9 @@ pub enum SignerError {
     /// Key file is not exactly 32 bytes.
     #[error("invalid key length: expected 32, got {0}")]
     InvalidKeyLength(usize),
+    /// `for_tenant` was called with an id that has no baked key.
+    #[error("no baked key for tenant: {0} (use `from_seed` or `new` instead)")]
+    UnknownTenant(String),
 }
 
 /// Per-tenant signing service. Holds the signing key in memory;
@@ -134,6 +156,23 @@ impl SignerService {
     pub fn tenant_id(&self) -> &str {
         &self.tenant_id
     }
+
+    /// Build a `SignerService` from a compile-time baked seed for
+    /// the two fixture tenants (`stark`, `wayne`). The seeds live
+    /// in `keys/{tenant}.ed25519` and are embedded via
+    /// `include_bytes!`. Returns `SignerError::UnknownTenant` for
+    /// any other tenant id (callers must use `from_seed` or `new`
+    /// for non-baked tenants).
+    pub fn for_tenant(tenant_id: &str) -> Result<Self, SignerError> {
+        let seed: [u8; 32] = match tenant_id {
+            "stark" => STARK_SEED,
+            "wayne" => WAYNE_SEED,
+            other => {
+                return Err(SignerError::UnknownTenant(other.to_string()));
+            }
+        };
+        Ok(Self::from_seed(tenant_id, seed))
+    }
 }
 
 #[cfg(test)]
@@ -211,5 +250,52 @@ mod tests {
         std::fs::write(&path, b"short").unwrap();
         let err = SignerService::new("broken", tmp.path()).unwrap_err();
         assert!(matches!(err, SignerError::InvalidKeyLength(5)));
+    }
+
+    #[test]
+    fn for_tenant_returns_baked_signers() {
+        let stark = SignerService::for_tenant("stark").unwrap();
+        let wayne = SignerService::for_tenant("wayne").unwrap();
+        assert_eq!(stark.tenant_id(), "stark");
+        assert_eq!(wayne.tenant_id(), "wayne");
+        // The two tenants must NOT share a key.
+        assert_ne!(stark.public_key_hex(), wayne.public_key_hex());
+    }
+
+    #[test]
+    fn for_tenant_is_deterministic() {
+        // Same tenant → same keypair (baked seeds are constants).
+        let s1 = SignerService::for_tenant("stark").unwrap();
+        let s2 = SignerService::for_tenant("stark").unwrap();
+        assert_eq!(s1.public_key_hex(), s2.public_key_hex());
+        // Same input → same signature (deterministic Ed25519).
+        let msg = b"deterministic test";
+        assert_eq!(s1.sign_hex(msg), s2.sign_hex(msg));
+    }
+
+    #[test]
+    fn for_tenant_rejects_unknown_tenant() {
+        let err = SignerService::for_tenant("lexcorp").unwrap_err();
+        assert!(matches!(err, SignerError::UnknownTenant(t) if t == "lexcorp"));
+    }
+
+    #[test]
+    fn cross_tenant_verify_fails_with_baked_keys() {
+        let stark = SignerService::for_tenant("stark").unwrap();
+        let wayne = SignerService::for_tenant("wayne").unwrap();
+        let msg = b"only stark should be able to verify this";
+        let sig = stark.sign(msg);
+        // Wayne cannot verify Stark's signature.
+        assert!(!wayne.verify(msg, &sig));
+        // But Stark can.
+        assert!(stark.verify(msg, &sig));
+    }
+
+    #[test]
+    fn baked_seed_is_32_bytes() {
+        assert_eq!(STARK_SEED.len(), 32);
+        assert_eq!(WAYNE_SEED.len(), 32);
+        // Stark and Wayne seeds differ (no key reuse).
+        assert_ne!(STARK_SEED, WAYNE_SEED);
     }
 }
