@@ -34,6 +34,7 @@ printpdf = "0.7"
 
 [dev-dependencies]
 tokio = { workspace = true }
+proptest = "1"
 
 [features]
 # `bench` enables test_support for the bench binary and the
