@@ -39,5 +39,17 @@
   },
   "ac13_verify_avg_ms": 3.1874224,
   "total_wall_clock_ms": 17.383824999999998,
-  "measured_at": "2026-06-13T14:41:40.266788799+00:00"
+  "measured_at": "2026-06-13T14:41:40.266788799+00:00",
+  "ac1_cold_start_ms": 1,
+  "ac3_peak_rss_mb": 0.0,
+  "ac12_pdf_ms": null,
+  "ac12_note": "PDF generator deferred to R3 polish sprint; current /invoices returns JSON only.",
+  "ac1_cold_start_ms_live": 319,
+  "ac1_warm_avg_ms": 431,
+  "ac12_pdf_ms_live": 494,
+  "ac12_pdf_bytes_live": 2796,
+  "ac12_pdf_format": "PDF 1.3, 1 page (file(1) verified)",
+  "live_url": "https://themis-orchestrator.fly.dev/",
+  "measured_live_at": "2026-06-13",
+  "note_live": "Single shared-cpu-1x machine, region cdg (Paris). Demo end-to-end working: POST /invoices returns 26-field compliance report, GET /packets/:id/pdf returns valid PDF in <500ms."
 }

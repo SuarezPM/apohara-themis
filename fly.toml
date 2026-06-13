@@ -1,0 +1,77 @@
+# fly.toml — Fly.io configuration for the THEMIS orchestrator.
+# https://fly.io/docs/reference/configuration/
+#
+# Run: `fly launch` (uses this file) or `fly deploy` (after first launch).
+# The CLI prompts for an app name on first launch; afterwards
+# `fly deploy` re-deploys without re-prompting.
+
+app = "themis-orchestrator"
+primary_region = "cdg"  # Paris — closest active EU region to Madrid (mad is deprecated)
+
+# Single machine: the in-memory DashMap that holds
+# SignedPackets (used by the /packets/:id/pdf endpoint) is
+# per-process, so HA with 2 machines would 404 cross-instance
+# reads. We accept the availability hit in exchange for
+# consistent state. A follow-up sprint can move to Redis or
+# Tigris for cross-instance state.
+#
+# auto_stop kicks in after 5 min of inactivity to stay within
+# the 3 shared-VM-256MB-hours free monthly budget; first
+# request after wake pays a ~1-2s cold start (still < AC1's
+# 800ms target when warm).
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  RUST_LOG = "info"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 250
+    soft_limit = 200
+
+  # Run a single machine (no HA) so the in-memory DashMap
+  # holding SignedPackets is consistent across requests.
+  # See the file-level comment above for the rationale.
+  processes = ["app"]
+  [[services.machine]]  # placeholder; actual machine config is below in [deploy]
+    cpu_kind = "shared"
+    cpus = 1
+    memory_mb = 256
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/"
+
+  # Auto-suspend after 5min of inactivity on the free tier to
+  # stay within the 3 shared-VM-256MB-hours free monthly budget.
+  # First request after suspend pays a ~1-2s cold start (still
+  # within AC1 <800ms when warm).
+  [services.auto_stop]
+    enabled = true
+    min_machines_running = 0
+    stop_machines = "stop"

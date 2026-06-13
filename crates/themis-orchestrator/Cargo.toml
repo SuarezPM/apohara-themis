@@ -48,3 +48,7 @@ bench = []
 name = "themis-bench"
 path = "src/bin/bench.rs"
 required-features = ["bench"]
+
+[[bin]]
+name = "themis-orchestrator"
+path = "src/bin/themis-orchestrator.rs"
