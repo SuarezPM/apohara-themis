@@ -30,7 +30,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
-use themis_agents::baaar::BaaarReason;
 use themis_agents::decision::{AgentDecision, AgentError, DecisionType};
 use themis_agents::llm::{LlmBackend, LlmRequest, LlmResponse, MockLlmProvider};
 use themis_agents::traits::{Agent, AgentContext};
@@ -47,6 +46,7 @@ struct DemoInvoice {
     expected_verdict: String,
     #[serde(default)]
     expected_halt_reason: String,
+    #[allow(dead_code)]
     #[serde(default)]
     halt_reason_human: Option<String>,
     extracted: ExtractedInvoice,
@@ -54,6 +54,7 @@ struct DemoInvoice {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 struct ExtractedInvoice {
     vendor: String,
     vendor_tax_id: String,
@@ -66,12 +67,14 @@ struct ExtractedInvoice {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 struct LineItem {
     description: String,
     amount_cents: i64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 struct FraudAssessmentShape {
     risk_score: f32,
     coherence_score: f32,

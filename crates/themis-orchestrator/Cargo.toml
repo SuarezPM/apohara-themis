@@ -35,9 +35,5 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio = { workspace = true }
 
 [[bin]]
-name = "themis-orchestrator"
-path = "src/lib.rs"
-
-[[bin]]
 name = "themis-bench"
 path = "src/bin/bench.rs"

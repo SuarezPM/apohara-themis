@@ -20,6 +20,7 @@ use themis_orchestrator::room::MockBandRoom;
 use themis_orchestrator::tenants::TenantRegistry;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 struct DemoInvoice {
     invoice_id: String,
     tenant_id: String,
@@ -33,6 +34,7 @@ struct DemoInvoice {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 struct ExtractedInvoice {
     vendor: String,
     vendor_tax_id: String,
@@ -45,12 +47,14 @@ struct ExtractedInvoice {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 struct LineItem {
     description: String,
     amount_cents: i64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
 struct FraudAssessmentShape {
     risk_score: f32,
     coherence_score: f32,

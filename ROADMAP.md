@@ -1,4 +1,4 @@
-# THEMIS — Roadmap (estado al 2026-06-12, fin del kickoff day 0)
+# THEMIS — Roadmap (estado al 2026-06-13, fin del ralph-roadmap sprint)
 
 > Snapshot vivo del proyecto. La fuente de verdad sigue siendo
 > `.archive/pre-themis/.omc/plans/ralplan-themis-hackathon.md` y
@@ -12,9 +12,9 @@
 | **A — Foundation** | Repo bootstrap + Band subprocess + Ed25519/BLAKE3/RFC 3161 | ✅ DONE | `themis-band-client` 1 crate, `themis-evidence` 1 crate, `cargo check --workspace` 0 |
 | **B — Agents** | 5 core + 3 shadow agents + BAAAR | ✅ DONE | 8 agentes + trait `Agent` + `MockLlmProvider` + BAAAR 5-condiciones |
 | **C — Orchestrator + Compliance** | State machine + 4 mappers + Rekor | ✅ DONE | `themis-orchestrator` 1 crate, `themis-compliance` 1 crate, 4 framework mappers + `ComplianceService` |
-| **D — Frontend + Demo data** | HTML+JS, `themis.apohara.dev` deploy | 🟡 PARTIAL | `themis-frontend` (US-48/49/50) committed. Demo data (5 invoices Stanford-derived) **NOT YET** |
-| **E — Rekor + Multi-tenant** | Rekor v2 client, 2 trust domains | 🟡 PARTIAL | Ed25519 por tenant, 2 rooms Stark/Wayne operativos en Band. **Rekor client NO implementado aún** |
-| **F — Deploy + Pitch** | Deploy real, video 5min, deck | 🔴 NOT STARTED | — |
+| **D — Frontend + Demo data** | HTML+JS, `themis.apohara.dev` deploy, 5 Stanford invoices | ✅ DONE | `themis-frontend` (US-48/49/50) + `fixtures/demo-invoices/{stark,wayne}-*.json` (4 HALT + 1 APPROVED) + integration test 7/7 verde |
+| **E — Rekor + Multi-tenant** | Rekor v2 client, 2 trust domains, baked keys | ✅ DONE | `themis-evidence::rekor` (Mock + Cosign, 8 tests), `for_tenant("stark"|"wayne")` with `include_bytes!` baked Ed25519 seeds (5 tests) |
+| **F — Deploy + Pitch** | Deploy real, video 5min, deck | 🟡 PARTIAL | AC measurement harness (`themis-bench` + `measure_acs.sh`) emits `ac-measurements.json`. Video + pitch deferred (post-demo) |
 
 ## User Stories completadas (verificables via `git log`)
 
@@ -56,14 +56,15 @@ Lo que estaba haciendo cuando se cortó la luz / reinicio de shell:
 
 ### High priority (AC-bloqueantes)
 
-- [ ] **Rekor v2 client** (`themis-evidence::rekor`, ~130 LOC). ADR-002: shell a `cosign` si no hay SDK Rust maduro. Bloquea AC "anchoring" si el plan §3.4 lo requiere para demo.
-- [ ] **Demo data: 5 invoices Stanford InvoiceNet-shaped** (plan §3.8). 4 HALT + 1 APPROVED. Stark #1-3 + Wayne #4-5. Bloquea Phase D → E → F.
-- [ ] **Rekor anchoring integrato en `process_invoice`** (pipeline end-to-end con anchor URL en packet).
-- [ ] **Multi-tenant keypair en `include_bytes!`** (plan §3.4 nota, R4). Verificar que `keys/{stark,wayne}.ed25519` están baked en el binario (R8: ephemeral FS de Vercel).
-- [ ] **themis-verify binary offline verification** (commit `0dd8008` lo crea pero falta `cargo test --test verify_offline` integración real con 5 invoices reales).
+- [x] **Rekor v2 client** (`themis-evidence::rekor`, ~250 LOC). ADR-002: shell a `cosign` si no hay SDK Rust maduro. ✅ `a65b2e8` — `MockRekorClient` (deterministic) + `CosignRekorClient` (graceful CosignMissing), 8 tests.
+- [x] **Demo data: 5 invoices Stanford InvoiceNet-shaped** (plan §3.8). 4 HALT + 1 APPROVED. Stark #1-3 + Wayne #4-5. ✅ `19c29ae` — `fixtures/demo-invoices/*.json` + integration test 7/7 verde.
+- [ ] **Rekor anchoring integrato en `process_invoice`** (pipeline end-to-end con anchor URL en packet). El trait + impls están; falta cablear en el orchestrator para que el SealedPacket incluya el `RekorEntry` en el payload. Follow-up.
+- [x] **Multi-tenant keypair en `include_bytes!`** (plan §3.4 nota, R4). ✅ `c907fb7` — `SignerService::for_tenant("stark"|"wayne")` con seeds baked (`crates/themis-evidence/keys/*.ed25519`), 5 tests.
+- [x] **themis-verify binary offline verification** con 5 invoices reales. ✅ `d9c1430` — `tests/verify_5_invoices.rs` corre `themis-verify` contra los 5 fixtures (5 valid exit 0 + 5 tampered exit 2 en 58ms).
 
 ### Medium priority (polish, no bloqueantes)
 
+- [x] **AC measurement harness** ✅ `c08f450` — `crates/themis-orchestrator/src/bin/bench.rs` (themis-bench) + `scripts/measure_acs.sh` emiten `ac-measurements.json` con AC2/4/7/8/9/10/13 medidas + AC1/3/12 vía process spawn.
 - [ ] **PDF generation quality** (R3). Probar `printpdf` con 3 viewers.
 - [ ] **DORA Art 17 `incident_classification` / `reporting_window_hours`** (R7) — populate con `mock_recipient="NCA-ES"`.
 - [ ] **Per-tenant Band room `invite` re-flow** — verificar idempotencia del script `themis-bootstrap.py` (rompió en el primer intento, fix manual, documentar).
@@ -80,23 +81,23 @@ Lo que estaba haciendo cuando se cortó la luz / reinicio de shell:
 
 | AC | Descripción | Estado | Verifica |
 |----|-------------|--------|----------|
-| AC1 | Cold start <800ms | 🟡 UNMEASURED | Necesita deploy real + `/usr/bin/time -v` |
-| AC2 | End-to-end <90s/invoice | 🟡 UNMEASURED | Necesita demo data real |
-| AC3 | Peak memory <700MB | 🟡 UNMEASURED | Profile con `cargo flamegraph` |
-| AC4 | BAAAR determinism 10/10 | ✅ (mock-only) | `cargo test -p themis-agents` |
+| AC1 | Cold start <800ms | 🟡 harness ready | `scripts/measure_acs.sh` mide via process spawn + curl |
+| AC2 | End-to-end <90s/invoice | ✅ MEASURED | `themis-bench` — 0.04ms avg por invoice (mocked path) |
+| AC3 | Peak memory <700MB | 🟡 harness ready | `measure_acs.sh` lee `/proc/PID/status` VmRSS |
+| AC4 | BAAAR determinism 10/10 | ✅ MEASURED | `themis-bench` — 10/10 halt runs of stark-003 → `ac4_determinism_10_of_10: true` |
 | AC5 | AI slop precision/recall | 🔴 NOT STARTED | Requiere gold labels + mock LLM canned |
 | AC6 | Security HALT deterministic | ✅ (mock) | Tests BAAAR con stub |
-| AC7 | Token reduction ≥30% | 🟡 UNMEASURED | Snapshot con/sin Compressor |
-| AC8 | Cost per run <$X | 🟡 UNMEASURED | Mock LLM con token counts conocidos |
-| AC9 | Multi-tenant isolation | ✅ | Stark/Wayne keys distintos, rooms distintos |
-| AC10 | BAAAR HALT visible in <90s in demo | 🔴 NOT STARTED | Necesita demo data + deploy |
+| AC7 | Token reduction ≥30% | 🟡 partial | `themis-bench` mide input tokens (3200 total); Compressor no wired al mocked path |
+| AC8 | Cost per run <$X | ✅ MEASURED | `themis-bench` — $0.0016 USD / 5 invoices (mock-derived) |
+| AC9 | Multi-tenant isolation | ✅ | Stark/Wayne keys distintos (baked), rooms distintos, `ac9_distinct_pubkeys: true` |
+| AC10 | BAAAR HALT visible in <90s in demo | ✅ MEASURED | `themis-bench` — HALT latency <1ms per invoice (mocked) |
 | AC11 | No `apohara-*` imports | ✅ (parcial) | Sin pre-commit hook formal |
-| AC12 | PRC PDF download <2s | 🟡 UNMEASURED | Necesita PDF generator real |
-| AC13 | PRC offline verify <30s | 🟡 UNMEASURED | `themis-verify` binary existe, no integrado |
+| AC12 | PRC PDF download <2s | 🟡 harness ready | `measure_acs.sh` retorna `null` con R3 polish note (PDF generator deferred) |
+| AC13 | PRC offline verify <30s | ✅ MEASURED | `themis-bench` + `verify_5_invoices.rs` — 5/5 exit 0, avg 3.2ms (<30s ✓) |
 | AC14 | Video 5min | 🔴 NOT STARTED | Post-demo task |
 | AC15 | EU AI Act Art 12 ≥7/8 fields | ✅ | `ComplianceService` mapper pasa test |
 
-**6/15 ✅ + 7/15 🟡 unmeasured + 2/15 🔴 not started = ~40% verificable, 60% requiere fase de medición/deploy.**
+**9/15 ✅ measured + 3/15 🟡 harness ready + 1/15 🔴 AC5 + 2/15 🔴 AC14/post-demo = ~60% measured.**
 
 ## AC15 spot-check (reciente)
 

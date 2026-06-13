@@ -25,6 +25,7 @@ use themis_evidence::packet::{EvidenceService, SealedPacket};
 use themis_evidence::timestamp::MockTimestampAuthority;
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct ExtractedInvoice {
     vendor: String,
     vendor_tax_id: String,
@@ -37,6 +38,7 @@ struct ExtractedInvoice {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct LineItem {
     description: String,
     amount_cents: i64,
