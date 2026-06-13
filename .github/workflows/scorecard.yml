@@ -1,46 +1,25 @@
 name: Scorecard
-
 on:
-  schedule:
-    - cron: '17 6 * * 1'
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
 
-# Read-only by default; the analysis job widens only the scopes it needs.
-# (Pattern copied from apohara-agentguard, which has this workflow green.)
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   analysis:
-    name: Scorecard analysis
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      security-events: write
-      id-token: write
-      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-
-      - name: Run analysis
-        uses: ossf/scorecard-action@05c7c5c3ff86de03b04e3e5b2529974e5fd7a3ec # v2.4.1
+      - uses: actions/checkout@v4
+      - uses: ossf/scorecard-action@v2.4.1
         with:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
         env:
           GITHUB_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload SARIF
+      - uses: github/codeql-action/upload-sarif@v3
         if: always()
-        uses: github/codeql-action/upload-sarif@4e828ff8d448a5a5b0e9eb5cc3e7d2c4b5b8c2c5 # v3
         with:
           sarif_file: results.sarif
           category: scorecard
