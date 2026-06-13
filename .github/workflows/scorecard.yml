@@ -1,25 +1,53 @@
 name: Scorecard
+
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
 
+# Per the ossf/scorecard-action v2.4.1 README: 'Scorecard can run
+# successfully with the workflow's default GITHUB_TOKEN.'
+# We rely on the default — do NOT pass a custom GITHUB_AUTH_TOKEN
+# (passing it overrides the OIDC token the action needs to
+# publish results; the previous attempt at this caused the
+# 'report requested was not found' on scorecard.dev).
+#
+# Job-level permissions: id-token: write is required for
+# publish_results: true (OIDC to api.securityscorecards.dev).
 permissions: {}
 
 jobs:
   analysis:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Scorecard analysis
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: ossf/scorecard-action@v2.4.1
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@v2.4.1
         with:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
-        env:
-          GITHUB_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: github/codeql-action/upload-sarif@v3
+          # No custom GITHUB_AUTH_TOKEN — let the action use
+          # the runner's default GITHUB_TOKEN, which is what
+          # the OIDC-to-publish-results path expects.
+          # ro_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SARIF
         if: always()
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
           category: scorecard
