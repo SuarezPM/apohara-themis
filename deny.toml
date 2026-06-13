@@ -1,0 +1,50 @@
+# cargo-deny configuration for THEMIS.
+# https://embarkstudios.github.io/cargo-deny/
+#
+# R11/US-X02 hardening: enforce no banned licenses, no duplicate
+# crates, no yanked crates, no advisories on our dep set. The
+# pre-commit hook (scripts/install-pre-commit.sh) runs
+# `cargo deny check` before every commit.
+#
+# Run manually: `cargo deny check`
+
+[graph]
+all-features = false
+
+[advisories]
+# Empty db-version = use the bundled db (offline). The first run
+# will fetch the latest; subsequent runs are fast.
+db-path = "~/.cargo/advisory-db"
+yanked = "warn"
+ignore = []
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+    "OpenSSL",
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
