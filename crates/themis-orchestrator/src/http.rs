@@ -32,6 +32,8 @@ use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 
 use crate::events::{Event, EventBus};
 use crate::orchestrator::Orchestrator;
+use crate::packet::SignedPacket;
+use crate::pdf;
 
 /// Shared application state held by every axum handler.
 #[derive(Clone)]
@@ -46,6 +48,11 @@ pub struct AppState {
     pub compliance: std::sync::Arc<themis_compliance::service::ComplianceService>,
     /// Per-run-id → ComplianceReport (populated after process_invoice).
     pub reports: DashMap<uuid::Uuid, ComplianceReport>,
+    /// Per-packet-id → SignedPacket (populated after process_invoice
+    /// so the PDF endpoint can render it). Keyed by packet_id (not
+    /// run_id) so the PDF is reachable from the demo URL the
+    /// frontend hands to the judge.
+    pub packets: DashMap<uuid::Uuid, SignedPacket>,
 }
 
 /// Build the axum Router with all routes.
@@ -70,6 +77,7 @@ pub fn build_router(state: AppState) -> Router {
             "/compliance-report/:run_id",
             get(get_compliance_report_json),
         )
+        .route("/packets/:packet_id/pdf", get(get_packet_pdf))
         .with_state(state)
 }
 
@@ -161,6 +169,7 @@ async fn post_invoices(
     );
     let report = state.compliance.report(&compliance_packet);
     state.reports.insert(run_id, report.clone());
+    state.packets.insert(packet.packet.packet_id, packet.clone());
     state.event_bus.publish(Event::EvidenceSealed {
         run_id,
         packet_id: packet.packet.packet_id,
@@ -216,6 +225,33 @@ fn js_response(s: &str) -> Response {
 fn base64_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.decode(s)
+}
+
+/// `GET /packets/:packet_id/pdf` — render the sealed packet as PDF
+/// bytes. Used by the frontend's "Download PDF" button to satisfy
+/// AC12 (PRC PDF download <2s).
+async fn get_packet_pdf(
+    State(state): State<Arc<AppState>>,
+    Path(packet_id): Path<uuid::Uuid>,
+) -> Result<Response, (StatusCode, String)> {
+    let packet = state
+        .packets
+        .get(&packet_id)
+        .ok_or((StatusCode::NOT_FOUND, format!("packet {packet_id} not found")))?;
+    let bytes = pdf::render_packet_pdf(&packet)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("PDF render: {e}")))?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/pdf")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!(
+                "attachment; filename=\"themis-{}-{}.pdf\"",
+                packet.packet.tenant_id, packet.packet.invoice_id
+            ),
+        )
+        .body(Body::from(bytes))
+        .unwrap())
 }
 
 #[cfg(test)]
@@ -282,6 +318,7 @@ mod tests {
             event_bus: std::sync::Arc::new(EventBus::new(64)),
             compliance: std::sync::Arc::new(themis_compliance::service::ComplianceService::new()),
             reports: DashMap::new(),
+            packets: DashMap::new(),
         }
     }
 

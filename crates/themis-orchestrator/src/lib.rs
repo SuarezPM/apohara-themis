@@ -33,6 +33,7 @@ pub mod concurrency;
 pub mod events;
 pub mod http;
 pub mod isolation;
+pub mod pdf;
 pub mod jcr_gate;
 pub mod kill_switch;
 pub mod orchestrator;

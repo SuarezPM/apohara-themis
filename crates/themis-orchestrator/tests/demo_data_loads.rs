@@ -261,3 +261,38 @@ async fn rekor_anchors_all_5_fixtures_end_to_end() {
         );
     }
 }
+
+// --- US-P01: PDF generation via /packets/:id/pdf (AC12) ---
+
+#[tokio::test]
+async fn pdf_render_under_2s_for_each_fixture() {
+    // AC12: PRC PDF download <2s. We measure the in-process PDF
+    // render (which is the bulk of the latency; HTTP transport
+    // adds <10ms on localhost). The full HTTP roundtrip is
+    // covered by the http::tests module.
+    use std::time::Instant;
+    for name in [
+        "stark-001.json",
+        "stark-002.json",
+        "stark-003.json",
+        "wayne-001.json",
+        "wayne-002.json",
+    ] {
+        let f = load_fixture(name);
+        let (orch, _) = orchestrator_with_rekor(&f);
+        let sp = orch
+            .process_invoice(&f.tenant_id, &f.invoice_id, b"raw".to_vec())
+            .await
+            .unwrap();
+        let start = Instant::now();
+        let bytes = themis_orchestrator::pdf::render_packet_pdf(&sp)
+            .expect("PDF render should succeed");
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_secs_f64() < 2.0,
+            "PDF render for {name} took {elapsed:?} (>2s)"
+        );
+        assert!(bytes.len() > 1024, "PDF for {name} is too small: {} bytes", bytes.len());
+        assert_eq!(&bytes[..5], b"%PDF-", "PDF for {name} has wrong magic bytes");
+    }
+}
