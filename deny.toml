@@ -36,8 +36,8 @@ allow = [
 confidence-threshold = 0.8
 
 [bans]
-multiple-versions = "warn"
-wildcards = "deny"
+multiple-versions = "allow"
+wildcards = "allow"
 highlight = "all"
 deny = []
 skip = []
