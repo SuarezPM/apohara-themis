@@ -18,6 +18,9 @@
 //! * **`jcr_gate.rs`** (RALPH Foundation) — JCR Safety Gate
 //! * **`prefix_salt.rs`** (RALPH Foundation) — Prefix Salt Planner
 //! * **`concurrency.rs`** (RALPH Foundation) — Concurrency Scheduler
+//! * **`test_support.rs`** — shared LLM-mediated StubAgent + fixture
+//!   types for the demo_data_loads integration test and the
+//!   themis-bench binary
 
 #![warn(missing_docs)]
 
@@ -39,6 +42,18 @@ pub mod room;
 pub mod router;
 pub mod state;
 pub mod tenants;
+
+// `test_support` is shared between the integration test
+// (tests/demo_data_loads.rs) and the bench binary. Cargo's
+// `cfg(test)` only covers the lib's `#[cfg(test)] mod tests`, not
+// integration tests in `tests/`, so we use a feature flag
+// (`--features bench`) that the bench binary and CI both set.
+// Integration tests pass `--features bench` to `cargo test`.
+// `#[allow(dead_code)]` on the module silences the warning when
+// only the bench (or only the test) is being built.
+#[allow(dead_code)]
+#[cfg(any(test, feature = "bench"))]
+pub mod test_support;
 
 #[cfg(test)]
 mod tests {

@@ -34,6 +34,16 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 [dev-dependencies]
 tokio = { workspace = true }
 
+[features]
+# `bench` enables test_support for the bench binary and the
+# demo_data_loads integration test. It's a default feature so
+# `cargo test -p themis-orchestrator` Just Works without having
+# to remember `--features bench`; the bench binary is gated by
+# `required-features = ["bench"]` below.
+default = ["bench"]
+bench = []
+
 [[bin]]
 name = "themis-bench"
 path = "src/bin/bench.rs"
+required-features = ["bench"]

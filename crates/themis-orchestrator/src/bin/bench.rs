@@ -1,6 +1,6 @@
 //! `themis-bench` — measures the ACs that don't need a real deploy.
 //!
-//! Run: `cargo run --release --bin themis-bench -- --out ac-measurements.json`
+//! Run: `cargo run --release --bin themis-bench --features bench -- --out ac-measurements.json`
 //!
 //! ACs measured (fully mocked path, no real LLM/TSA/Rekor):
 //! - **AC2**: end-to-end `process_invoice` latency per demo invoice (5 runs).
@@ -25,69 +25,20 @@
 //! Output: JSON report at `--out` (default `ac-measurements.json`).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::Instant;
 
-use serde::{Deserialize, Serialize};
-use themis_agents::decision::{AgentDecision, AgentError, DecisionType};
-use themis_agents::llm::{LlmBackend, LlmRequest, LlmResponse, MockLlmProvider};
-use themis_agents::traits::{Agent, AgentContext};
+use serde::Serialize;
+use themis_agents::llm::{LlmBackend, LlmResponse, MockLlmProvider};
 use themis_evidence::packet::EvidenceService;
 use themis_evidence::timestamp::MockTimestampAuthority;
 use themis_orchestrator::orchestrator::Orchestrator;
 use themis_orchestrator::room::MockBandRoom;
 use themis_orchestrator::tenants::TenantRegistry;
-
-#[derive(Debug, Clone, Deserialize)]
-struct DemoInvoice {
-    invoice_id: String,
-    tenant_id: String,
-    expected_verdict: String,
-    #[serde(default)]
-    expected_halt_reason: String,
-    #[allow(dead_code)]
-    #[serde(default)]
-    halt_reason_human: Option<String>,
-    extracted: ExtractedInvoice,
-    fraud_assessment: FraudAssessmentShape,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[allow(dead_code)]
-struct ExtractedInvoice {
-    vendor: String,
-    vendor_tax_id: String,
-    amount_cents: i64,
-    line_items: Vec<LineItem>,
-    date_iso: String,
-    po_ref: String,
-    #[serde(default = "default_currency")]
-    currency: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[allow(dead_code)]
-struct LineItem {
-    description: String,
-    amount_cents: i64,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[allow(dead_code)]
-struct FraudAssessmentShape {
-    risk_score: f32,
-    coherence_score: f32,
-    debate_rounds: u32,
-    #[serde(default)]
-    explicit_halt: bool,
-    #[serde(default)]
-    secret_leak: bool,
-}
-
-fn default_currency() -> String {
-    "USD".to_string()
-}
+use themis_orchestrator::test_support::{
+    build_stub_agents, fixtures_dir, fraud_auditor_payload, stub_default_response, DemoInvoice,
+};
 
 #[derive(Debug, Clone, Serialize)]
 struct AcReport {
@@ -105,15 +56,6 @@ struct AcReport {
     ac13_verify_avg_ms: f64,
     total_wall_clock_ms: f64,
     measured_at: String,
-}
-
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|p| p.parent())
-        .expect("repo root")
-        .join("fixtures")
-        .join("demo-invoices")
 }
 
 fn load_fixtures() -> Vec<DemoInvoice> {
@@ -134,92 +76,10 @@ fn load_fixtures() -> Vec<DemoInvoice> {
         .collect()
 }
 
-fn expected_outcome_string(f: &DemoInvoice) -> &'static str {
-    match f.expected_verdict.as_str() {
-        "APPROVED" => "approve",
-        "HALT" => match f.expected_halt_reason.as_str() {
-            "risk_score_exceeded" => "halt_risk_score_exceeded",
-            "secret_leak_detected" => "halt_secret_leak_detected",
-            "coherence_too_low" => "halt_coherence_too_low",
-            "max_debate_rounds_reached" => "halt_max_debate_rounds_reached",
-            "explicit_halt_requested" => "halt_explicit_halt_requested",
-            other => panic!("unknown halt_reason: {other}"),
-        },
-        other => panic!("unknown verdict: {other}"),
-    }
-}
-
-struct StubAgent {
-    name: &'static str,
-    llm: Arc<dyn LlmBackend>,
-    input_token_counter: Arc<std::sync::atomic::AtomicU32>,
-}
-
-#[async_trait::async_trait]
-impl Agent for StubAgent {
-    fn name(&self) -> &'static str {
-        self.name
-    }
-    async fn process(
-        &self,
-        ctx: AgentContext,
-    ) -> Result<AgentDecision, AgentError> {
-        let (system_prompt, user_prompt) = if self.name == "fraud_auditor" {
-            (
-                "fraud_auditor_agent".to_string(),
-                format!("assess_fraud_risk:upstream_decisions={}", ctx.upstream_decisions.len()),
-            )
-        } else if self.name == "extractor" {
-            (
-                "extractor_agent".to_string(),
-                format!("parse_invoice:{}:{}", ctx.tenant_id, ctx.invoice_id),
-            )
-        } else {
-            (
-                format!("{}_agent", self.name),
-                format!("upstream_decisions={}", ctx.upstream_decisions.len()),
-            )
-        };
-        let req = LlmRequest {
-            system_prompt,
-            user_prompt,
-            max_tokens: 1024,
-            temperature: 0.0,
-            seed: Some(42),
-        };
-        let resp = self.llm.complete(req).await?;
-        self.input_token_counter
-            .fetch_add(resp.input_tokens, std::sync::atomic::Ordering::SeqCst);
-        let parsed: serde_json::Value = serde_json::from_str(&resp.text)
-            .map_err(|e| AgentError::LlmMalformedPayload(e.to_string()))?;
-        let decision_type = match self.name {
-            "extractor" => DecisionType::Extracted,
-            "po_matcher" => DecisionType::PoMatched,
-            "fraud_auditor" => DecisionType::FraudAssessed,
-            "gaap_classifier" => DecisionType::GaapClassified,
-            "provenance_signer" => DecisionType::ProvenanceSigned,
-            "demo_narrator" => DecisionType::Narrated,
-            "regression_tester" => DecisionType::RegressionResult,
-            "audit_watchdog" => DecisionType::WatchdogAlert,
-            _ => unreachable!(),
-        };
-        Ok(AgentDecision {
-            agent_id: self.name.to_string(),
-            tenant_id: ctx.tenant_id,
-            invoice_id: ctx.invoice_id,
-            decision_type,
-            confidence: 0.9,
-            reasoning: format!("{} stub: ok", self.name),
-            timestamp_ms: 0,
-            payload: parsed,
-        })
-    }
-}
-
 fn orchestrator_for(
     f: &DemoInvoice,
-    counter: Arc<std::sync::atomic::AtomicU32>,
-) -> (Orchestrator, Arc<std::sync::atomic::AtomicU32>) {
+    counter: Arc<AtomicU32>,
+) -> (Orchestrator, Arc<AtomicU32>) {
     let mock_llm: Arc<dyn LlmBackend> = Arc::new(
         MockLlmProvider::new("mock-bench")
             .with_response(
@@ -234,57 +94,30 @@ fn orchestrator_for(
             .with_response(
                 "assess_fraud_risk",
                 LlmResponse {
-                    text: serde_json::json!({
-                        "assessment": {
-                            "risk_score": f.fraud_assessment.risk_score,
-                            "findings": [],
-                            "coherence_score": f.fraud_assessment.coherence_score,
-                            "debate_rounds": f.fraud_assessment.debate_rounds,
-                            "explicit_halt": f.fraud_assessment.explicit_halt,
-                        },
-                        "outcome": expected_outcome_string(f),
-                    })
-                    .to_string(),
+                    text: fraud_auditor_payload(f),
                     input_tokens: 256,
                     output_tokens: 64,
                     model_id: "mock-bench".to_string(),
                 },
             )
-            .with_default(LlmResponse {
-                text: serde_json::json!({"stub":"ok"}).to_string(),
-                input_tokens: 64,
-                output_tokens: 32,
-                model_id: "mock-bench".to_string(),
-            }),
+            .with_default(stub_default_response("mock-bench")),
     );
-    let mut agents: HashMap<String, Arc<dyn Agent>> = HashMap::new();
-    for name in [
-        "extractor",
-        "po_matcher",
-        "fraud_auditor",
-        "gaap_classifier",
-        "provenance_signer",
-        "demo_narrator",
-        "regression_tester",
-        "audit_watchdog",
-    ] {
-        agents.insert(
-            name.to_string(),
-            Arc::new(StubAgent {
-                name,
-                llm: mock_llm.clone(),
-                input_token_counter: counter.clone(),
-            }),
-        );
-    }
+    let agents = build_stub_agents(mock_llm, Some(counter.clone()));
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let router = themis_orchestrator::router::LlmBackendRouter::with_default_routing(HashMap::new());
     (Orchestrator::new(rooms, agents, router, tenants), counter)
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn main() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(run());
+}
+
+async fn run() {
     let args: Vec<String> = std::env::args().collect();
     let out = args
         .iter()
@@ -296,7 +129,6 @@ async fn main() {
     let total_start = Instant::now();
     let fixtures = load_fixtures();
 
-    // AC2 / AC10: per-invoice latency.
     let mut per_invoice_ms: HashMap<String, f64> = HashMap::new();
     let mut halt_latency_ms: HashMap<String, f64> = HashMap::new();
     let mut tokens_per_invoice: HashMap<String, u32> = HashMap::new();
@@ -307,7 +139,7 @@ async fn main() {
     let mut total_usd_cents: f64 = 0.0;
 
     for f in &fixtures {
-        let counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter = Arc::new(AtomicU32::new(0));
         let (orch, counter) = orchestrator_for(f, counter);
         let start = Instant::now();
         let sp = orch
@@ -319,11 +151,10 @@ async fn main() {
         let in_tok = counter.load(std::sync::atomic::Ordering::SeqCst);
         tokens_per_invoice.insert(f.invoice_id.clone(), in_tok);
         total_input_tokens += in_tok;
-        // Mock cost: $0.50/MTok input × tokens, output = $1.50/MTok (rough)
+        // $0.50/MTok input × tokens.
         let usd_cents = (in_tok as f64 * 0.05) / 1000.0;
         total_usd_cents += usd_cents;
 
-        // HALT-specific latency
         if matches!(
             sp.packet.bbaaar_outcome,
             themis_agents::baaar::Outcome::Halt(_)
@@ -334,13 +165,9 @@ async fn main() {
         }
 
         // AC13: run themis-verify on a real SealedPacket built from
-        // the fixture's ExtractedInvoice. We use EvidenceService
-        // directly (the orchestrator's SignedPacket shape differs
-        // from the themis-verify binary's expected SealedPacket).
+        // the fixture's ExtractedInvoice.
         let tsa: Arc<dyn themis_evidence::timestamp::TimestampAuthority> =
             Arc::new(MockTimestampAuthority::new("https://mock.tsa.local"));
-        // Deterministic seed per tenant (matches the baked keys
-        // in themis-evidence/keys/).
         let seed: [u8; 32] = if f.tenant_id == "stark" {
             [0xA1; 32]
         } else {
@@ -355,12 +182,12 @@ async fn main() {
         let sig_path = std::env::temp_dir().join(format!("bench-{}.sig", f.invoice_id));
         std::fs::write(&sig_path, &sealed.signature_hex).unwrap();
         let start = Instant::now();
-        let out = std::process::Command::new("./target/release/themis-verify")
+        let output = std::process::Command::new("./target/release/themis-verify")
             .arg(&tmp)
             .arg(&sig_path)
             .output();
         let dur = start.elapsed().as_secs_f64() * 1000.0;
-        match out {
+        match output {
             Ok(o) => {
                 verify_exit_codes.insert(f.invoice_id.clone(), o.status.code().unwrap_or(-1));
                 if o.status.success() {
@@ -373,11 +200,11 @@ async fn main() {
         }
     }
 
-    // AC4 / AC6: determinism — run stark-003 (HALT) 10 times, count halts
-    let f0 = &fixtures[2]; // stark-003
+    // AC4 / AC6: determinism — run stark-003 10 times.
+    let f0 = &fixtures[2];
     let mut halts_10 = 0;
     for _ in 0..10 {
-        let counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter = Arc::new(AtomicU32::new(0));
         let (orch, _) = orchestrator_for(f0, counter);
         let sp = orch
             .process_invoice(&f0.tenant_id, &f0.invoice_id, b"raw".to_vec())
@@ -392,18 +219,24 @@ async fn main() {
     }
     let determinism_10_of_10 = halts_10 == 10;
 
-    // AC9: distinct pubkeys
     let stark_tenant = TenantRegistry::with_default_tenants();
     let stark = stark_tenant.get("stark").unwrap();
     let wayne = stark_tenant.get("wayne").unwrap();
     let distinct_pubkeys = stark.ed25519_public_key_hex != wayne.ed25519_public_key_hex;
 
-    // AC2 stats
     let mut latencies: Vec<f64> = per_invoice_ms.values().copied().collect();
     latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let avg = latencies.iter().sum::<f64>() / latencies.len() as f64;
+    let avg = if latencies.is_empty() {
+        0.0
+    } else {
+        latencies.iter().sum::<f64>() / latencies.len() as f64
+    };
     let p95_idx = (latencies.len() as f64 * 0.95).ceil() as usize - 1;
-    let p95 = latencies[p95_idx.min(latencies.len() - 1)];
+    let p95 = if latencies.is_empty() {
+        0.0
+    } else {
+        latencies[p95_idx.min(latencies.len() - 1)]
+    };
     let verify_avg = if !verify_durations.is_empty() {
         verify_durations.iter().sum::<f64>() / verify_durations.len() as f64
     } else {
