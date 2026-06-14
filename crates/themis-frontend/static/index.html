@@ -3,45 +3,135 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>THEMIS · AP Invoice Audit · Stark/Wayne</title>
+  <title>THEMIS · AP Invoice Audit · Stark / Wayne</title>
+  <meta name="description" content="5-agent Rust orchestrator that audits AP invoices against the PO database, BAAAR gate, and a signed Evidence Packet. DORA Art.9/10/17 + EU AI Act Art.12/26 + NIST AI RMF + OWASP Agentic 2026.">
+  <meta name="view-transition" content="same-origin">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2030%2036'%3E%3Cpath%20d='M%202%204%20H%2028%20V%2022%20L%2015%2034%20L%202%2022%20Z'%20fill='%23080b12'%20stroke='%23c8854a'%20stroke-width='2.4'/%3E%3Cpath%20d='M%209%2025%20L%2015%2011%20L%2021%2025%20M%2012%2020%20H%2018'%20fill='none'%20stroke='%23c8854a'%20stroke-width='2.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 36'><path d='M 2 4 H 28 V 22 L 15 34 L 2 22 Z' fill='%23080b12' stroke='%23c8854a' stroke-width='2.4'/><path d='M 9 25 L 15 11 L 21 25 M 12 20 H 18' fill='none' stroke='%23c8854a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Geist:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/tokens.css" />
   <link rel="stylesheet" href="/static/app.css" />
 </head>
-<body>
-  <!-- ───── N6 Command-bar nav ───── -->
-  <nav class="n6" aria-label="Primary">
-    <div class="n6__brand">
-      <span class="n6__brand-mark" aria-hidden="true">Θ</span>
-      <span class="n6__brand-name">THEMIS</span>
-      <span class="n6__brand-tag">ap invoice audit</span>
-    </div>
-    <div class="n6__tenant" aria-label="Active tenant">
-      <label for="tenant-switch" class="n6__tenant-label">Tenant</label>
-      <select id="tenant-switch" class="n6__tenant-select" aria-describedby="tenant-help">
-        <option value="stark">Stark Industries</option>
-        <option value="wayne">Wayne Enterprises</option>
-      </select>
-      <span id="tenant-help" class="n6__tenant-help">2 trust domains · Ed25519 isolated keys</span>
-    </div>
-    <div class="n6__live" role="status" aria-live="polite">
-      <span class="n6__live-dot" aria-hidden="true"></span>
-      <span class="n6__live-text">Live · <span id="n6-event-count">0</span> events</span>
-    </div>
-  </nav>
+<body data-qa-ready>
 
-  <!-- ───── Section 1 · Submit ───── -->
-  <section class="submit" aria-labelledby="submit-h">
-    <header class="submit__head">
-      <p class="eyebrow">Step 01 · Submit</p>
-      <h1 id="submit-h" class="submit__h1">
-        Audit an invoice against the PO database, BAAAR gate, and Evidence Packet.
-      </h1>
-      <p class="submit__lede">
-        One invoice → five-agent debate → Ed25519-signed packet.
-        Pick a fixture; the demo URL is read-only and stateless.
-      </p>
-    </header>
-    <form class="submit__form" id="submit-form" novalidate>
+<!-- ───── nav-island (shared Apohara chrome) ───── -->
+<div class="nav-island-wrap">
+  <nav class="nav-island" aria-label="Primary">
+    <a class="brand" href="https://apohara.dev" aria-label="Apohara home">
+      <svg class="mark" viewBox="0 0 30 36" fill="none" aria-hidden="true">
+        <path d="M 2 4 H 28 V 22 L 15 34 L 2 22 Z" fill="var(--canvas)" stroke="var(--accent)" stroke-width="2.4"/>
+        <path d="M 9 25 L 15 11 L 21 25 M 12 20 H 18" stroke="var(--accent)" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="name">APOHARA</span>
+    </a>
+    <span class="island-sep" aria-hidden="true"></span>
+    <div class="island-links">
+      <a class="crumb" href="https://apohara.dev">hub</a>
+      <a href="https://apohara.dev#toolkit">toolkit</a>
+      <a href="https://themis.apohara.dev" aria-current="page">themis</a>
+    </div>
+    <a class="nav-cta" href="https://github.com/SuarezPM/apohara-themis"><span class="cta-dot" aria-hidden="true"></span>source · MIT</a>
+  </nav>
+</div>
+
+<!-- ───── Sticky N6 (functional chrome — tenant switch + live event counter, NOT replaced by nav-island) ───── -->
+<nav class="n6" aria-label="Tenant + live status">
+  <div class="n6__brand">
+    <span class="n6__brand-mark" aria-hidden="true">Θ</span>
+    <span class="n6__brand-name">THEMIS</span>
+    <span class="n6__brand-tag">ap invoice audit</span>
+  </div>
+  <div class="n6__tenant" aria-label="Active tenant">
+    <label for="tenant-switch" class="n6__tenant-label">Tenant</label>
+    <select id="tenant-switch" class="n6__tenant-select" aria-describedby="tenant-help">
+      <option value="stark">Stark Industries</option>
+      <option value="wayne">Wayne Enterprises</option>
+    </select>
+    <span id="tenant-help" class="n6__tenant-help">2 trust domains · Ed25519 isolated keys</span>
+  </div>
+  <div class="n6__live" role="status" aria-live="polite">
+    <span class="n6__live-dot" aria-hidden="true"></span>
+    <span class="n6__live-text">Live · <span id="n6-event-count">0</span> events</span>
+  </div>
+</nav>
+
+<main>
+  <!-- ───── Section 0 · Hero (Stat-Led: 4 frameworks as the lead) ───── -->
+  <header class="hero">
+    <svg class="hero-decoration" viewBox="0 0 1180 560" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
+      <g fill="none" stroke="var(--accent)" stroke-width="1" stroke-opacity=".4">
+        <path d="M40 80 L120 80 L120 40 L200 40"/>
+        <path d="M280 70 L360 70 L360 30 L440 30"/>
+        <path d="M520 90 L600 90 L600 50 L680 50"/>
+        <path d="M760 80 L840 80 L840 40 L920 40"/>
+        <path d="M980 100 L1060 100 L1060 60 L1140 60"/>
+        <path d="M60 240 L60 200 L140 200 L140 160 L220 160"/>
+        <path d="M300 250 L300 210 L380 210 L380 170 L460 170"/>
+        <path d="M520 260 L520 220 L600 220 L600 180 L700 180"/>
+        <path d="M760 250 L760 210 L840 210 L840 170 L920 170"/>
+        <path d="M980 240 L980 200 L1080 200 L1080 160 L1140 160"/>
+      </g>
+      <g fill="var(--accent)" stroke="none" opacity=".7">
+        <circle cx="200" cy="40" r="2.5"/><circle cx="440" cy="30" r="2.5"/><circle cx="680" cy="50" r="2.5"/><circle cx="920" cy="40" r="2.5"/><circle cx="1140" cy="60" r="2.5"/>
+        <circle cx="220" cy="160" r="2.5"/><circle cx="460" cy="170" r="2.5"/><circle cx="700" cy="180" r="2.5"/><circle cx="920" cy="170" r="2.5"/><circle cx="1140" cy="160" r="2.5"/>
+      </g>
+    </svg>
+    <div class="hero-band" aria-hidden="true"></div>
+    <div class="wrap hero-inner">
+      <p class="eyebrow">// regulated AP audit · v0.1.0 · Band of Agents Hackathon 2026</p>
+      <h1 class="pname-hero">THEMIS</h1>
+      <p class="hero-pq">The <span style="color:var(--accent)">scales</span> for AP invoice audit.</p>
+      <p class="lede"><b>One invoice → five-agent debate → Ed25519-signed Evidence Packet.</b> Built for buyers-side fraud detection: phantom vendors, math fraud, duplicate submissions, price gouges. <b>EU AI Act Art. 12 record-keeping</b> by default, with offline-verifiable BLAKE3 + Ed25519 anchors.</p>
+      <div class="badges">
+        <span class="badge"><b>DORA</b> · Art 9 / 10 / 17</span>
+        <span class="badge"><b>EU AI Act</b> · Art 12 L2</span>
+        <span class="badge"><b>NIST AI RMF</b> · Govern / Map / Measure / Manage</span>
+        <span class="badge"><b>OWASP Agentic 2026</b> · ASI01–ASI10</span>
+        <span class="badge"><b>BYOK</b> · Anthropic · Qwen3 · GLM-5</span>
+        <span class="badge"><b>MIT</b></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ───── Section 1 · Stat-Led: 4 framework cards ───── -->
+  <section class="sec frameworks" aria-labelledby="frameworks-h">
+    <div class="sec-head">
+      <h2 id="frameworks-h">Regulator coverage · mapped by default</h2>
+      <p>Every Evidence Packet populates the booleans for these four frameworks. No opt-in. No add-on tier. <b>The audit log is the product</b>.</p>
+    </div>
+    <div class="stat-row">
+      <article class="stat-cell">
+        <span class="stat-v">DORA</span>
+        <span class="stat-u">EU 2022/2554</span>
+        <span class="stat-d">Art 9 (ICT risk) · Art 10 (incident classification) · Art 17 (reporting) — all populated</span>
+      </article>
+      <article class="stat-cell">
+        <span class="stat-v">EU AI Act</span>
+        <span class="stat-u">Reg 2024/1689</span>
+        <span class="stat-d">Art 12 record-keeping (8/8 fields) · Art 26 deployer obligations</span>
+      </article>
+      <article class="stat-cell">
+        <span class="stat-v">NIST AI RMF</span>
+        <span class="stat-u">1.0</span>
+        <span class="stat-d">Govern · Map · Measure · Manage — all 4 functions traced in the evidence chain</span>
+      </article>
+      <article class="stat-cell">
+        <span class="stat-v">OWASP Agentic</span>
+        <span class="stat-u">2026</span>
+        <span class="stat-d">ASI01–ASI10 · prompt injection, sensitive disclosure, tool misuse — mitigated by AgentDecision.confidence + AuditWatchdog</span>
+      </article>
+    </div>
+  </section>
+
+  <!-- ───── Section 2 · Submit ───── -->
+  <section class="sec submit" aria-labelledby="submit-h">
+    <div class="sec-head">
+      <h2 id="submit-h">Step 01 · Submit</h2>
+      <p>Pick a fixture invoice. The orchestrator runs the 5-agent debate against the PO database, the BAAAR gate, and emits a signed Evidence Packet.</p>
+    </div>
+    <form id="submit-form" class="submit__form" novalidate>
       <label class="field">
         <span class="field__label">Invoice fixture</span>
         <select id="invoice-fixture" class="field__input" required>
@@ -59,14 +149,14 @@
     </form>
   </section>
 
-  <!-- ───── Section 2 · Live counter + status ───── -->
-  <section class="counter" aria-labelledby="counter-h">
-    <header class="counter__head">
-      <p class="eyebrow">Step 02 · Live counter</p>
-      <h2 id="counter-h" class="counter__h2">Per-agent cost and token spend</h2>
-    </header>
+  <!-- ───── Section 3 · Live counter + status ───── -->
+  <section class="sec counter" aria-labelledby="counter-h">
+    <div class="sec-head">
+      <h2 id="counter-h">Step 02 · Per-agent cost and token spend</h2>
+      <p>Each agent is a separate LLM call. Per-agent breakdown shows which specialist cost the most and which decided the verdict.</p>
+    </div>
     <div class="counter__grid" id="counter-grid">
-      <article class="cell" data-agent="extractor" data-state="default">
+      <article id="cell-extractor" class="cell" data-agent="extractor" data-state="default">
         <h3 class="cell__h">Extractor</h3>
         <p class="cell__model">gemini-3.1-flash-lite</p>
         <dl class="cell__dl">
@@ -75,7 +165,7 @@
           <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
         </dl>
       </article>
-      <article class="cell" data-agent="po_matcher" data-state="default">
+      <article id="cell-po_matcher" class="cell" data-agent="po_matcher" data-state="default">
         <h3 class="cell__h">PO Matcher</h3>
         <p class="cell__model">qwen3-coder-30b</p>
         <dl class="cell__dl">
@@ -84,7 +174,7 @@
           <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
         </dl>
       </article>
-      <article class="cell" data-agent="fraud_auditor" data-state="default">
+      <article id="cell-fraud_auditor" class="cell" data-agent="fraud_auditor" data-state="default">
         <h3 class="cell__h">Fraud Auditor</h3>
         <p class="cell__model">claude-sonnet-4.6</p>
         <dl class="cell__dl">
@@ -93,7 +183,7 @@
           <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
         </dl>
       </article>
-      <article class="cell" data-agent="gaap_classifier" data-state="default">
+      <article id="cell-gaap_classifier" class="cell" data-agent="gaap_classifier" data-state="default">
         <h3 class="cell__h">GAAP Classifier</h3>
         <p class="cell__model">glm-5.1</p>
         <dl class="cell__dl">
@@ -102,7 +192,7 @@
           <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
         </dl>
       </article>
-      <article class="cell" data-agent="provenance_signer" data-state="default">
+      <article id="cell-provenance_signer" class="cell" data-agent="provenance_signer" data-state="default">
         <h3 class="cell__h">Provenance Signer</h3>
         <p class="cell__model">claude-haiku-4.5</p>
         <dl class="cell__dl">
@@ -111,7 +201,7 @@
           <dt>Cost (USD)</dt><dd data-k="cost">—</dd>
         </dl>
       </article>
-      <article class="cell cell--totals" data-agent="total" data-state="default">
+      <article id="cell-total" class="cell cell--totals" data-agent="total" data-state="default">
         <h3 class="cell__h">Total</h3>
         <p class="cell__model">5 LLM calls · 1 BLAKE3 · 1 Ed25519 · 1 RFC 3161</p>
         <dl class="cell__dl">
@@ -123,35 +213,31 @@
     </div>
   </section>
 
-  <!-- ───── Section 3 · Band transcript ───── -->
-  <section class="transcript" aria-labelledby="transcript-h">
-    <header class="transcript__head">
-      <p class="eyebrow">Step 03 · Band transcript</p>
-      <h2 id="transcript-h" class="transcript__h2">Agent @mention debate</h2>
-      <p class="transcript__lede">
-        Every handoff is a real Band message. The room id, agent ids, and timestamps are
-        the audit trail.
-      </p>
-    </header>
+  <!-- ───── Section 4 · Band transcript ───── -->
+  <section class="sec transcript" aria-labelledby="transcript-h">
+    <div class="sec-head">
+      <h2 id="transcript-h">Step 03 · Band transcript</h2>
+      <p>Every handoff is a real Band message. The room id, agent ids, and timestamps are the audit trail.</p>
+    </div>
     <ol class="transcript__list" id="transcript-list" aria-live="polite" aria-relevant="additions">
       <li class="transcript__empty">No events yet — submit an invoice to start the debate.</li>
     </ol>
   </section>
 
-  <!-- ───── Section 4 · BAAAR HALT overlay (initially hidden) ───── -->
+  <!-- ───── Section 5 · BAAAR HALT overlay (initially hidden) ───── -->
   <div class="halt-overlay" id="halt-overlay" role="alertdialog" aria-labelledby="halt-h" aria-modal="true" hidden>
     <div class="halt-overlay__card">
       <header class="halt-overlay__head">
         <p class="eyebrow eyebrow--halt">BAAAR HALT</p>
         <h2 id="halt-h" class="halt-overlay__h2">WORKFLOW HALTED</h2>
-        <p class="halt-overlay__sub" id="halt-reason">—</p>
+        <p class="halt-overlay__sub"><span data-k="reason">—</span></p>
       </header>
       <dl class="halt-overlay__meta">
-        <dt>Trigger</dt><dd id="halt-trigger">—</dd>
-        <dt>Halt at</dt><dd id="halt-ts">—</dd>
-        <dt>Agent</dt><dd id="halt-agent">—</dd>
-        <dt>Tenant</dt><dd id="halt-tenant">—</dd>
-        <dt>Invoice</dt><dd id="halt-invoice">—</dd>
+        <dt>Trigger</dt><dd data-k="trigger">—</dd>
+        <dt>Halt at</dt><dd data-k="ts">—</dd>
+        <dt>Agent</dt><dd data-k="agent">—</dd>
+        <dt>Tenant</dt><dd data-k="tenant">—</dd>
+        <dt>Invoice</dt><dd data-k="invoice">—</dd>
       </dl>
       <p class="halt-overlay__lede">
         Download the receipt to verify the Ed25519 signature and BLAKE3 hash offline
@@ -164,16 +250,12 @@
     </div>
   </div>
 
-  <!-- ───── Section 5 · Evidence download + Compliance dashboard ───── -->
-  <section class="evidence" aria-labelledby="evidence-h">
-    <header class="evidence__head">
-      <p class="eyebrow">Step 04 · Evidence</p>
-      <h2 id="evidence-h" class="evidence__h2">Sealed packet, ready to verify offline</h2>
-      <p class="evidence__lede">
-        Ed25519 signature over BLAKE3(payload) · RFC 3161 timestamp from the TSA ·
-        Rekor v2 log anchor (when wired).
-      </p>
-    </header>
+  <!-- ───── Section 6 · Evidence download + Compliance dashboard ───── -->
+  <section class="sec evidence" aria-labelledby="evidence-h">
+    <div class="sec-head">
+      <h2 id="evidence-h">Step 04 · Evidence</h2>
+      <p>Ed25519 signature over BLAKE3(payload) · RFC 3161 timestamp from the TSA · Rekor v2 log anchor (when wired).</p>
+    </div>
     <div class="evidence__grid">
       <article class="evidence__card" id="evidence-summary" data-state="empty">
         <h3 class="evidence__h3">Packet summary</h3>
@@ -192,19 +274,59 @@
       </article>
     </div>
   </section>
+</main>
 
-  <!-- ───── Ft7 Single-line footer ───── -->
-  <footer class="ft7">
-    <p class="ft7__line">
-      <span class="ft7__brand">THEMIS</span> ·
-      <span class="ft7__version" id="ft7-version">v0.1.0</span> ·
-      <span class="ft7__commit" id="ft7-commit">commit pending</span> ·
-      <a class="ft7__link" href="https://github.com/SuarezPM/apohara-themis">source</a> ·
-      <a class="ft7__link" href="/compliance">compliance</a> ·
-      <span class="ft7__license">MIT</span>
-    </p>
-  </footer>
+<!-- ───── Footer (shared Apohara chrome with circuit SVG) ───── -->
+<footer class="footer">
+  <svg class="circuit" viewBox="0 0 1180 280" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <g fill="none" stroke="var(--ink-faint)" stroke-width="1" stroke-opacity=".5">
+      <path d="M60 220 L60 180 L140 180 L140 140 L240 140"/>
+      <path d="M300 230 L300 200 L380 200 L380 160 L460 160"/>
+      <path d="M520 250 L520 210 L600 210 L600 170 L700 170"/>
+      <path d="M760 240 L760 200 L840 200 L840 150 L920 150"/>
+      <path d="M980 250 L980 220 L1080 220 L1080 180 L1140 180"/>
+      <path d="M40 100 L120 100 L120 60 L200 60"/>
+      <path d="M280 90 L360 90 L360 50 L440 50"/>
+      <path d="M900 110 L1000 110 L1000 70 L1100 70"/>
+    </g>
+    <g fill="var(--accent)" stroke="none" opacity=".6">
+      <circle cx="240" cy="140" r="2.5"/><circle cx="460" cy="160" r="2.5"/><circle cx="700" cy="170" r="2.5"/><circle cx="920" cy="150" r="2.5"/><circle cx="1140" cy="180" r="2.5"/><circle cx="200" cy="60" r="2.5"/><circle cx="440" cy="50" r="2.5"/><circle cx="1100" cy="70" r="2.5"/>
+    </g>
+  </svg>
+  <div class="wrap">
+    <p class="foot-statement">Five agents, one signed packet, four regulator frameworks. Zero SaaS lock-in — your diffs never leave the orchestrator.</p>
+    <div class="foot-inner">
+      <div class="foot-brand">
+        <span class="name">APOHARA · THEMIS</span>
+        <p>5-agent Rust orchestrator for buyer-side AP invoice fraud detection. EU AI Act Art. 12 L2 ready by default. MIT.</p>
+      </div>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <h3>THEMIS</h3>
+          <a href="https://github.com/SuarezPM/apohara-themis">Source · GitHub</a>
+          <a href="https://github.com/SuarezPM/apohara-themis/blob/main/README.md">README</a>
+          <a href="https://github.com/SuarezPM/apohara-themis/blob/main/THREAT_MODEL.md">Threat model</a>
+          <a href="https://github.com/SuarezPM/apohara-themis/blob/main/SECURITY.md">Security</a>
+          <a href="/compliance">Compliance dashboard</a>
+        </div>
+        <div class="foot-col">
+          <h3>Resources</h3>
+          <a href="https://apohara.dev">Apohara hub</a>
+          <a href="https://github.com/SuarezPM">Brand kit</a>
+        </div>
+        <div class="foot-col">
+          <h3>Connect</h3>
+          <a href="https://github.com/SuarezPM">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>THEMIS <span id="ft7-version">v0.1.0</span> · commit <span id="ft7-commit">pending</span> · MIT</span>
+      <span><span class="cta-dot" aria-hidden="true"></span>live · <span id="ft7-event-count-foot">0</span> events</span>
+    </div>
+  </div>
+</footer>
 
-  <script src="/static/app.js" defer></script>
+<script src="/static/app.js" defer></script>
 </body>
 </html>

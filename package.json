@@ -36,5 +36,9 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "playwright": "^1.60.0"
   }
 }

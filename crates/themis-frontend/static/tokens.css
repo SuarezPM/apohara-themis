@@ -1,99 +1,128 @@
-/* Hallmark · macrostructure: Workbench · tone: technical-austere
- * theme: Quiet · anchor hue: none (BAAAR red is functional, not brand)
- * sections: Submit · Live Counter · Band Transcript · BAAAR HALT · Compliance · Download
- * states: default · hover · focus · active · disabled · loading · error · success
+/* Hallmark · macrostructure: Stat-Led · tone: technical-regulator
+ * theme: Quiet-dark · anchor hue: copper 50° (THEMIS — the trust/audit hue)
+ * studied: yes · DNA-source: themis-frontend v0.1.0 (N6 command-bar, 5-agent counter, BAAAR HALT overlay)
+ * differs from argus (also Stat-Led) on accent hue (copper vs emerald) + paper band
+ * sections: Hero (Stat-Led 4-framework) · Submit · Live Counter · Band Transcript · BAAAR HALT · Evidence + Download · Footer
+ * states: default · hover · focus-visible · active · disabled · loading · error · success
  * contrast: pass (46–50) · mobile: pass (320/375/414/768)
  */
 
-/* --- Quiet theme tokens (system-native, no chromatic accent) --- */
 :root {
-  /* Paper band: very dark (L < 30%) for the security/audit feel */
-  --color-paper: oklch(16% 0.01 250);
-  --color-paper-2: oklch(20% 0.01 250);
-  --color-paper-3: oklch(26% 0.012 250);
-  --color-ink: oklch(96% 0.005 250);
-  --color-ink-2: oklch(78% 0.01 250);
-  --color-ink-3: oklch(56% 0.012 250);
-  --color-ink-4: oklch(38% 0.012 250);
-  --color-rule: oklch(30% 0.012 250);
-  --color-focus: oklch(82% 0.18 230);
-  --color-halt: oklch(64% 0.22 27); /* BAAAR red — functional, not brand */
-  --color-halt-soft: oklch(28% 0.10 27);
-  --color-ok: oklch(72% 0.16 152);
-  --color-warn: oklch(78% 0.16 80);
+  /* === primitives: gris (shared with apohara hub) === */
+  --g-0: oklch(8%  0.01  260);
+  --g-1: oklch(12% 0.012 260);
+  --g-2: oklch(16% 0.014 260);
+  --g-3: oklch(22% 0.016 260);
+  --g-4: oklch(88% 0.01  95);
 
-  /* Display + body: system-native, refined */
-  --font-display: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* === primitives: per-product accent (THEMIS) === */
+  --accent-themis:       oklch(65% 0.15  50);   /* copper — auditor/scale hue */
+  --complement-themis:   oklch(72% 0.14 230);   /* cool blue, ~180° Δ  */
 
-  /* 4-pt spacing scale (semantic) */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --space-8: 64px;
-  --space-9: 96px;
+  /* === semantic: surfaces === */
+  --canvas: var(--g-0);
+  --panel:  var(--g-1);
+  --raised: var(--g-2);
+  --well:   var(--g-3);
 
-  /* Type scale */
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 14px;
-  --text-md: 16px;
-  --text-lg: 18px;
-  --text-xl: 22px;
-  --text-2xl: 28px;
-  --text-3xl: 36px;
-  --text-4xl: 48px;
+  /* === semantic: text === */
+  --ink:        var(--g-4);
+  --ink-muted:  oklch(80% 0.01  95);
+  --ink-faint:  oklch(70% 0.012 95);
 
-  /* Easings (3 named, never browser default) */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  /* === semantic: lines === */
+  --hairline: oklch(28% 0.01 260 / 50%);
+
+  /* === semantic: accent (per-page override — THEMIS) === */
+  --accent:            var(--accent-themis);
+  --accent-complement: var(--complement-themis);
+  --on-accent:         oklch(15% 0.01 95);
+
+  /* === semantic: focus + status === */
+  --focus:   oklch(82% 0.18 230);   /* cool focus ring (cyan), high-contrast on dark */
+  --success: oklch(72% 0.18 150);
+  --warning: oklch(80% 0.15  80);
+  --danger:  oklch(64% 0.22  27);   /* BAAAR red — functional, not brand */
+  --danger-soft: oklch(28% 0.10 27);
+  --scrim:   oklch(0%  0     0  / 60%);
+  --shadow:  oklch(0%  0.02 260 / 60%);
+  --glow:    oklch(65% 0.15  50 / 18%);
+
+  /* === type families (2 + 1: display + mono + Geist for UI labels) === */
+  --font-display: 'Chakra Petch', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+  --font-ui:      'Geist', 'Geist Sans', system-ui, sans-serif;
+
+  /* === type scale === */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-md: 18px;
+  --text-lg: 20px;
+  --text-xl: clamp(22px, 3vw,   32px);
+  --text-2xl: clamp(24px, 3.4vw, 36px);
+  --text-3xl: clamp(32px, 5vw,   56px);
+  --text-display-s: clamp(36px, 5.4vw, 60px);
+  --text-display:  clamp(40px, 6.4vw, 80px);
+
+  /* === 8pt spacing scale (semantic) === */
+  --space-2xs:  4px;
+  --space-xs:   8px;
+  --space-sm:  12px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  32px;
+  --space-2xl: 40px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 96px;
+
+  /* === radii (sharp, technical — auditor feel) === */
+  --radius-sm:   6px;
+  --radius-md:   9px;
+  --radius-lg:  14px;
+  --radius-pill: 999px;
+
+  /* === easings (3 named, never browser default) === */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
-  /* Durations */
-  --dur-fast: 80ms;
-  --dur-base: 160ms;
-  --dur-slow: 280ms;
-  --dur-flash: 600ms;
+  /* === durations === */
+  --dur:        200ms;
+  --dur-fast:   120ms;
+  --dur-flash:  600ms;
 
-  /* Rules (hairlines) */
-  --rule: 1px solid var(--color-rule);
-  --rule-strong: 2px solid var(--color-rule);
-
-  /* Radius (sharp, technical) */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 8px;
+  /* === z-stack === */
+  --z-sticky:    200;
+  --z-sticky-nav:300;
+  --z-overlay:   400;
 }
 
-/* Root reset (mobile non-negotiable: no horizontal scroll) */
+/* === reset (mobile non-negotiable: no horizontal scroll) === */
+*, *::before, *::after { box-sizing: border-box; }
 html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-family: var(--font-body);
+  margin: 0; padding: 0;
+  overflow-x: clip;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-mono);
   font-size: var(--text-base);
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow-x: clip;
 }
-html { min-width: 320px; }
+html { min-width: 320px; scroll-behavior: smooth; }
 body { min-height: 100vh; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--ink); }
+code { font-family: var(--font-mono); color: var(--accent); }
 
-/* Focus ring (instant, no animation) */
-:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
-}
+/* === focus ring (instant, no animation) === */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
 :focus:not(:focus-visible) { outline: none; }
 
-/* Reduced motion */
+/* === reduced motion === */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
