@@ -18,7 +18,6 @@ use thiserror::Error;
 
 use crate::packet::{EvidencePacket, SignedPacket};
 use crate::room::BandRoom;
-use crate::router::LlmBackendRouter;
 use crate::state::{InvoiceState, StateMachine, Transition};
 use crate::tenants::{TenantError, TenantRegistry};
 
@@ -59,11 +58,6 @@ pub struct Orchestrator {
     state_machines: DashMap<String, StateMachine>,
     rooms: Arc<dyn BandRoom>,
     agents: HashMap<String, Arc<dyn Agent>>,
-    /// Kept for future per-agent LLM routing (see US-O09 follow-up).
-    /// Currently the agents carry their own LLM, so this is
-    /// consulted only via `self.router` reads in tests.
-    #[allow(dead_code)]
-    router: LlmBackendRouter,
     baaar: BaaarGate,
     tenants: Arc<TenantRegistry>,
     /// Optional Rekor client. If `Some`, every `process_invoice`
@@ -101,10 +95,9 @@ impl Orchestrator {
     pub fn new(
         rooms: Arc<dyn BandRoom>,
         agents: HashMap<String, Arc<dyn Agent>>,
-        router: LlmBackendRouter,
         tenants: Arc<TenantRegistry>,
     ) -> Self {
-        Self::new_with_rekor(rooms, agents, router, tenants, None)
+        Self::new_with_rekor(rooms, agents, tenants, None)
     }
 
     /// Build a new orchestrator with an optional Rekor client.
@@ -113,7 +106,6 @@ impl Orchestrator {
     pub fn new_with_rekor(
         rooms: Arc<dyn BandRoom>,
         agents: HashMap<String, Arc<dyn Agent>>,
-        router: LlmBackendRouter,
         tenants: Arc<TenantRegistry>,
         rekor: Option<Arc<dyn themis_evidence::rekor::RekorClient>>,
     ) -> Self {
@@ -121,7 +113,6 @@ impl Orchestrator {
             state_machines: DashMap::new(),
             rooms,
             agents,
-            router,
             baaar: BaaarGate::new(),
             tenants,
             rekor,
@@ -136,7 +127,6 @@ impl Orchestrator {
     pub fn with_evidence(
         rooms: Arc<dyn BandRoom>,
         agents: HashMap<String, Arc<dyn Agent>>,
-        router: LlmBackendRouter,
         tenants: Arc<TenantRegistry>,
         rekor: Option<Arc<dyn themis_evidence::rekor::RekorClient>>,
         evidence: HashMap<String, EvidenceService>,
@@ -145,7 +135,6 @@ impl Orchestrator {
             state_machines: DashMap::new(),
             rooms,
             agents,
-            router,
             baaar: BaaarGate::new(),
             tenants,
             rekor,
@@ -585,8 +574,7 @@ mod tests {
                 }),
             );
         }
-        let router = LlmBackendRouter::with_default_routing(HashMap::new());
-        Orchestrator::new(rooms, agents, router, tenants)
+        Orchestrator::new(rooms, agents, tenants)
     }
 
     #[tokio::test]
@@ -662,8 +650,7 @@ mod tests {
                 }),
             );
         }
-        let router = LlmBackendRouter::with_default_routing(HashMap::new());
-        let orch = Orchestrator::new(rooms, agents, router, tenants);
+        let orch = Orchestrator::new(rooms, agents, tenants);
 
         let sp = orch
             .process_invoice("stark", "inv-001", b"raw".to_vec())
@@ -761,7 +748,7 @@ mod tests {
             let orch = Orchestrator::new(
                 rooms.clone(),
                 agents,
-                LlmBackendRouter::with_default_routing(HashMap::new()),
+                // router removed: agents carry their own LLM, no global router needed
                 tenants.clone(),
             );
             let sp = orch
@@ -784,8 +771,7 @@ mod tests {
         let tenants = Arc::new(TenantRegistry::with_default_tenants());
         // No agents registered.
         let agents: HashMap<String, Arc<dyn Agent>> = HashMap::new();
-        let router = LlmBackendRouter::with_default_routing(HashMap::new());
-        let orch = Orchestrator::new(rooms, agents, router, tenants);
+        let orch = Orchestrator::new(rooms, agents, tenants);
         let sp = orch
             .process_invoice("stark", "inv-001", b"raw".to_vec())
             .await

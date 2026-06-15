@@ -285,6 +285,5 @@ pub fn build_orchestrator(
     let agents = build_stub_agents(mock_llm, counter);
     let rooms: Arc<dyn crate::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
-    let router = crate::router::LlmBackendRouter::with_default_routing(HashMap::new());
-    Orchestrator::new_with_rekor(rooms, agents, router, tenants, rekor)
+    Orchestrator::new_with_rekor(rooms, agents, tenants, rekor)
 }

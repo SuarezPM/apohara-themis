@@ -95,12 +95,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // BLAKE3 hash in the transparency log AND produces a
     // SealedPacket for the /json endpoint.
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
-    let router =
-        themis_orchestrator::router::LlmBackendRouter::with_default_routing(HashMap::new());
     let orch = Orchestrator::with_evidence(
         rooms,
         agents,
-        router,
         tenants,
         Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
         evidence_map,

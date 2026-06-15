@@ -44,8 +44,8 @@ pub struct LlmResponse {
 }
 
 /// The trait every LLM provider implements. Backends are concrete
-/// structs (`AnthropicBackend`, `OpenAiCompatBackend`, etc.) and live
-/// behind `Arc<dyn LlmBackend>` in agent constructors.
+/// structs and live behind `Arc<dyn LlmBackend>` in agent
+/// constructors.
 #[async_trait]
 pub trait LlmBackend: Send + Sync + 'static {
     /// Stable model identifier (e.g. "claude-sonnet-4.6",
@@ -177,120 +177,12 @@ impl LlmBackend for MockLlmProvider {
     }
 }
 
-// --- Routing-target stub backends ---
-// Real HTTP wiring is a follow-up sprint. These exist so the
-// orchestrator's LlmBackend trait abstraction has concrete
-// implementable types for each of the 4 routing targets in the plan.
-
-/// Stub for Claude Sonnet 4.6 / Haiku 4.5 (AI/ML API gateway).
-#[derive(Debug, Clone)]
-pub struct AnthropicBackend {
-    model_id: &'static str,
-}
-
-impl AnthropicBackend {
-    /// New Anthropic backend for the given model.
-    pub fn new(model_id: &'static str) -> Self {
-        Self { model_id }
-    }
-}
-
-#[async_trait]
-impl LlmBackend for AnthropicBackend {
-    fn model_id(&self) -> &'static str {
-        self.model_id
-    }
-
-    async fn complete(&self, _req: LlmRequest) -> Result<LlmResponse, AgentError> {
-        Err(AgentError::LlmUnavailable(format!(
-            "AnthropicBackend({}) HTTP wiring is a follow-up sprint",
-            self.model_id
-        )))
-    }
-}
-
-/// Stub for OpenAI-compatible providers (Featherless): DeepSeek
-/// V4-Flash, Qwen3-Coder-30B-A3B.
-#[derive(Debug, Clone)]
-pub struct OpenAiCompatBackend {
-    model_id: &'static str,
-}
-
-impl OpenAiCompatBackend {
-    /// New OpenAI-compat backend for the given model.
-    pub fn new(model_id: &'static str) -> Self {
-        Self { model_id }
-    }
-}
-
-#[async_trait]
-impl LlmBackend for OpenAiCompatBackend {
-    fn model_id(&self) -> &'static str {
-        self.model_id
-    }
-
-    async fn complete(&self, _req: LlmRequest) -> Result<LlmResponse, AgentError> {
-        Err(AgentError::LlmUnavailable(format!(
-            "OpenAiCompatBackend({}) HTTP wiring is a follow-up sprint",
-            self.model_id
-        )))
-    }
-}
-
-/// Stub for Z.ai direct (GLM-5.1). Note: in production we use
-/// Featherless flat-rate, not Z.ai direct (see plan §Known risks).
-#[derive(Debug, Clone)]
-pub struct ZaiBackend {
-    model_id: &'static str,
-}
-
-impl ZaiBackend {
-    /// New Z.ai backend for the given model.
-    pub fn new(model_id: &'static str) -> Self {
-        Self { model_id }
-    }
-}
-
-#[async_trait]
-impl LlmBackend for ZaiBackend {
-    fn model_id(&self) -> &'static str {
-        self.model_id
-    }
-
-    async fn complete(&self, _req: LlmRequest) -> Result<LlmResponse, AgentError> {
-        Err(AgentError::LlmUnavailable(format!(
-            "ZaiBackend({}) HTTP wiring is a follow-up sprint",
-            self.model_id
-        )))
-    }
-}
-
-/// Stub for Google Gemini (3.1 Flash-Lite for vision in Extractor).
-#[derive(Debug, Clone)]
-pub struct GoogleBackend {
-    model_id: &'static str,
-}
-
-impl GoogleBackend {
-    /// New Google backend for the given model.
-    pub fn new(model_id: &'static str) -> Self {
-        Self { model_id }
-    }
-}
-
-#[async_trait]
-impl LlmBackend for GoogleBackend {
-    fn model_id(&self) -> &'static str {
-        self.model_id
-    }
-
-    async fn complete(&self, _req: LlmRequest) -> Result<LlmResponse, AgentError> {
-        Err(AgentError::LlmUnavailable(format!(
-            "GoogleBackend({}) HTTP wiring is a follow-up sprint",
-            self.model_id
-        )))
-    }
-}
+// --- Routing-target stub backends removed (2026-06-15, US-04) ---
+// The 4 stub LLM backends (AnthropicBackend, OpenAiCompatBackend,
+// ZaiBackend, GoogleBackend) had zero production callers — they
+// were scaffolded for a future HTTP-wiring sprint that won't
+// ship before the 2026-06-19 demo. Removed. If a real LLM is
+// wired post-demo, add the stubs back then (YAGNI).
 
 /// Helper to wrap any LlmBackend in an Arc.
 pub fn shared(backend: impl LlmBackend) -> Arc<dyn LlmBackend> {
@@ -386,38 +278,6 @@ mod tests {
         };
         let out = mock.complete(r).await.unwrap();
         assert_eq!(out.text, "gaap");
-    }
-
-    #[test]
-    fn stub_backends_have_correct_model_ids() {
-        assert_eq!(
-            AnthropicBackend::new("claude-sonnet-4.6").model_id(),
-            "claude-sonnet-4.6"
-        );
-        assert_eq!(
-            AnthropicBackend::new("claude-haiku-4.5").model_id(),
-            "claude-haiku-4.5"
-        );
-        assert_eq!(
-            OpenAiCompatBackend::new("deepseek-v4-flash").model_id(),
-            "deepseek-v4-flash"
-        );
-        assert_eq!(
-            OpenAiCompatBackend::new("qwen3-coder-30b").model_id(),
-            "qwen3-coder-30b"
-        );
-        assert_eq!(ZaiBackend::new("glm-5.1").model_id(), "glm-5.1");
-        assert_eq!(
-            GoogleBackend::new("gemini-3.1-flash-lite").model_id(),
-            "gemini-3.1-flash-lite"
-        );
-    }
-
-    #[tokio::test]
-    async fn stub_backends_return_unavailable_until_wired() {
-        let b = AnthropicBackend::new("claude-sonnet-4.6");
-        let err = b.complete(req("hi")).await.unwrap_err();
-        assert!(matches!(err, AgentError::LlmUnavailable(_)));
     }
 
     #[test]

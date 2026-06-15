@@ -102,9 +102,7 @@ fn orchestrator_for(f: &DemoInvoice, counter: Arc<AtomicU32>) -> (Orchestrator, 
     let agents = build_stub_agents(mock_llm, Some(counter.clone()));
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
-    let router =
-        themis_orchestrator::router::LlmBackendRouter::with_default_routing(HashMap::new());
-    (Orchestrator::new(rooms, agents, router, tenants), counter)
+    (Orchestrator::new(rooms, agents, tenants), counter)
 }
 
 fn main() {

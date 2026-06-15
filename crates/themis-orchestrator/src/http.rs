@@ -415,12 +415,7 @@ mod tests {
         ] {
             agents.insert(n.to_string(), Arc::new(StubAgent(n, dt)));
         }
-        let orch = crate::orchestrator::Orchestrator::new(
-            rooms,
-            agents,
-            crate::router::LlmBackendRouter::with_default_routing(HashMap::new()),
-            tenants,
-        );
+        let orch = crate::orchestrator::Orchestrator::new(rooms, agents, tenants);
         AppState {
             orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(orch)),
             event_bus: std::sync::Arc::new(EventBus::new(64)),

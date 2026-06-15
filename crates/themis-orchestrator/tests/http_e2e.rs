@@ -14,7 +14,6 @@
 //! the production binary uses). If the test passes, the live
 //! deploy will pass.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::body::{to_bytes, Body};
@@ -87,12 +86,9 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
     let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm, None);
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
-    let router =
-        themis_orchestrator::router::LlmBackendRouter::with_default_routing(HashMap::new());
     let orch = Orchestrator::new_with_rekor(
         rooms,
         agents,
-        router,
         tenants,
         Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
     );
