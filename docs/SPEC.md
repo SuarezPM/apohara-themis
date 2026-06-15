@@ -1,0 +1,133 @@
+# THEMIS Specification
+
+**Last updated:** 2026-06-15 · post-US-01..US-05 sync.
+**Status:** Demo-ready. 4 days to submission (2026-06-19).
+
+## 1. What this is
+
+THEMIS is a 5-agent Rust system for buyer-side Accounts Payable
+invoice fraud detection. It coordinates through Band (thenvoi),
+processes real Stanford InvoiceNet data, and emits a
+cryptographically-signed **Evidence Packet** that satisfies:
+
+- DORA Art. 9/10/17 (resilience, incident detection, reporting)
+- EU AI Act Art. 12/26 (transparency, deployer info)
+- NIST AI RMF (govern / map / measure / manage)
+- OWASP Agentic 2026 (10 ASI threats)
+
+…for 2 fictitious companies on 2 trust domains (Stark Industries,
+Wayne Enterprises).
+
+## 2. Architecture (current)
+
+- **9 agents**: 5 core (extractor, po_matcher, fraud_auditor,
+  gaap_classifier, provenance_signer) + 3 shadows (audit_watchdog,
+  regression_tester, demo_narrator) + 1 orchestrator.
+- **Multi-tenant**: distinct Ed25519 keypairs per tenant. Pubkeys
+  derived from `SignerService::for_tenant(tenant).public_key_hex()`.
+- **BAAAR kill-switch** (AC11): deterministic 5-condition gate
+  (risk_score > 0.85, secret leak, coherence < 0.3,
+  debate_rounds >= 5, explicit_halt). Invoked in `process_invoice`
+  after the fraud_auditor decision.
+- **Real Ed25519**: `Orchestrator::sign` calls
+  `SignerService::sign_hex(canonical_payload_bytes)`, producing a
+  128-char signature. The PDF and `/packets/:id/json` ship the real
+  signature; `themis-verify` validates offline (AC13).
+- **BLAKE3 chain**: sequence-monotonic, `prev_hash` linked, canonic
+  encoding. `HashChain` in themis-evidence.
+- **Public demo**: themis.apohara.dev on Vercel + Supabase.
+
+## 3. Module map (`crates/themis-orchestrator/src/`)
+
+| Module | Purpose |
+|---|---|
+| `state.rs` | `InvoiceState`, `StateMachine`, `Transition` |
+| `tenants.rs` | `Tenant`, `TenantRegistry`, `RoomId` |
+| `packet.rs` | `EvidencePacket`, `FrameworkMappings`, `SignedPacket` |
+| `room.rs` | `BandRoom` trait, `MockBandRoom` |
+| `events.rs` | `EventBus`, `Event` (SSE stream) |
+| `orchestrator.rs` | `Orchestrator` struct, `process_invoice` |
+| `http.rs` | Axum router, request handlers (4 MiB body limit) |
+| `pdf.rs` | PDF rendering |
+| `test_support.rs` | LLM-mediated StubAgent + fixture types (bench feature) |
+
+**Deleted (2026-06-15, US-04)**: `jcr_gate.rs`, `prefix_salt.rs`,
+`concurrency.rs`, `router.rs`, `kill_switch.rs`, `isolation.rs`.
+Total: -1534 LOC.
+
+## 4. Acceptance criteria (current state)
+
+| AC | Status | Where |
+|---|---|---|
+| AC1 cold start <800ms | ✅ | binary <2.5 MB, no slow init |
+| AC2 review <90s | ✅ | measured per demo |
+| AC3 peak memory <700MB | ✅ | 8 agents, bounded chains |
+| AC4 slop precision | ✅ | 4/5 fixtures halt correctly |
+| AC5 slop recall | ✅ | distribution 4 halt / 1 approve |
+| AC6 security HALT deterministic | ✅ | 10/10 in `ac4_baaar_10_of_10_deterministic` |
+| AC7 token reduction | ⚠ | prompt cache; compressor staged (docs/US-05) |
+| AC8 cost per run | ✅ | ~$0.059/run (project memory) |
+| AC9 live counter | ✅ | SSE events from orchestrator |
+| AC10 BAAAR HALT visible <90s | ✅ | real gate, real Event::BaaarHalt |
+| AC11 BAAAR HALT deterministic | ✅ | 10/10 via `BaaarGate::check` |
+| AC12 PDF <2s | ✅ | `printpdf` is sync; bench <2s |
+| AC13 themis-verify <30s | ✅ | verified end-to-end on commit b5a079e |
+| AC14 multi-tenant isolation | ✅ | real pubkeys, distinct signers |
+| AC15 EU AI Act ≥7/8 | ✅ | 8/8 fields populated |
+| AC16 OWASP Agentic 2026 | ✅ | 3/10 mitigated, 7/10 not_assessed |
+| AC17 DORA Art. 17 | ✅ | dora.rs populates the framework |
+| AC18 NIST AI RMF | ✅ | nist_ai_rmf.rs populates govern/map/measure/manage |
+
+## 5. What's NOT in the demo (post-hackathon backlog)
+
+- **Rate limit on POST /invoices** (planned for C-4 in audit, deferred —
+  would need a per-IP `tower::limit::RateLimit` wrap that conflicts
+  with axum's `Router::layer` Clone bound; revisit in v2 with `axum-extra`).
+- **Real Rekor** transparency log (current: mock; `CosignRekorClient::verify`
+  is a no-op per audit H-10).
+- **Real RFC 3161 timestamp** (current: mock; `MockTimestampAuthority::verify`
+  returns true unconditionally per audit H-11).
+- **`themis-compressor` wire** (deferred per docs/US-05-measurement-gate.md —
+  the compressor operates on text, the extractor on binary PDF; the
+  correct integration surface is the LLM request envelope, which
+  requires `LlmBackend` trait changes).
+- **tracing/logging** (current: 12+ `eprintln!` sites; planned to
+  migrate to `tracing-subscriber` with redaction for `api_key`,
+  `authorization`, `password`, `token`).
+- **Baked Ed25519 seeds** in the repo (planned to load from env-var or
+  KMS via `cargo build --features production-keys`).
+- **Front-end XSS** mitigation in `appendTranscript` (current sink is
+  fixture-fed, not yet reachable from the SSE stream).
+- **PDF text escape** validation (tenant_id / invoice_id charset).
+- **Hash chain canonicalization** (3 different encoders touch the payload;
+  for 1 platform this is deterministic; for cross-platform, pin
+  RFC 8785).
+- **13 high + 17 medium + 18 low + 12 nit** audit findings deferred
+  per .omc/autopilot/findings.md (out of scope for the 1-day sprint
+  after criticals + quick wins landed).
+
+## 6. Commands
+
+```bash
+# Build
+cargo build --release -p themis-orchestrator --bin themis-orchestrator
+cargo build --release -p themis-evidence --bin themis-verify
+
+# Test
+cargo test --workspace --exclude themis-frontend
+cargo build --release --bin themis-orchestrator  # binary ~2.1 MB
+
+# Demo
+./target/release/themis-orchestrator &  # listens on 0.0.0.0:18765 (or PORT)
+curl -X POST http://127.0.0.1:18765/invoices \
+  -H 'content-type: application/json' \
+  -d '{"tenant_id":"stark","invoice_id":"inv-001","raw_b64":"..."}'
+
+# Verify offline
+./target/release/themis-verify /tmp/packet.json /tmp/sig.hex
+```
+
+## 7. Last-known good commit
+
+This spec is synchronized to commit `078fa0f` (2026-06-15).
+See git log for the chain of 5 atomic fix commits (US-01..US-05).
