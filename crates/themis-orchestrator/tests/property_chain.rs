@@ -70,7 +70,12 @@ proptest! {
         ba.extend_from_slice(&prefix);
         let h_ab = blake3::hash(&ab);
         let h_ba = blake3::hash(&ba);
-        if prefix != suffix {
+        // BLAKE3 is order-sensitive: any rearrangement of the
+        // bytes produces a different hash. The check is on the
+        // final concatenated byte sequences, not on the inputs
+        // separately — `prefix=[]` + `suffix=[0]` collapses `ab`
+        // and `ba` to the same bytes and must be excluded.
+        if ab != ba {
             prop_assert_ne!(h_ab, h_ba);
         }
     }

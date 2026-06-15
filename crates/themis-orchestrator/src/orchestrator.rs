@@ -380,19 +380,31 @@ impl Orchestrator {
         EvidencePacket::new(tenant_id, invoice_id, decisions.to_vec(), outcome)
     }
 
-    /// Wrap the packet with a (deterministic-mock) signature.
-    /// In production this is a real Ed25519 sign via the
-    /// `themis-evidence` crate.
+    /// Wrap the packet with a real Ed25519 signature from
+    /// `themis_evidence::signer::SignerService::for_tenant(tenant_id)`.
+    /// The signature is over the canonical JSON of the packet; the
+    /// public key is the tenant's real pubkey (from
+    /// `TenantRegistry`, derived at startup from the same SignerService).
+    /// `themis-verify` can validate the produced packet offline.
     fn sign(&self, packet: EvidencePacket, tenant_id: &str) -> SignedPacket {
         let tenant = self.tenants.get(tenant_id);
         let public_key_hex = tenant
             .map(|t| t.ed25519_public_key_hex.clone())
             .unwrap_or_default();
-        // Deterministic mock signature: 32 bytes of the packet id
-        // (padded to 64). Real signature in themis-evidence.
-        let sig_input = packet.packet_id.as_bytes();
-        let sig_input_padded: Vec<u8> = sig_input.iter().cycle().take(64).copied().collect();
-        let signature_hex = hex::encode(sig_input_padded);
+        // Real Ed25519 sig over the canonical JSON bytes. The
+        // SignerService is the same one TenantRegistry used to
+        // derive `public_key_hex` at startup, so the sig verifies
+        // against the embedded pubkey.
+        let signer = themis_evidence::signer::SignerService::for_tenant(tenant_id)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "SignerService::for_tenant({tenant_id}) failed at sign time: {e}"
+                )
+            });
+        let canonical_payload = packet
+            .to_canonical_json()
+            .expect("EvidencePacket::to_canonical_json is infallible for our types");
+        let signature_hex = signer.sign_hex(&canonical_payload);
         SignedPacket::wrap(packet, signature_hex, public_key_hex)
     }
 
@@ -600,8 +612,10 @@ mod tests {
         assert_eq!(sp.packet.invoice_id, "inv-001");
         // 8 agents → 8 decisions in the chain.
         assert_eq!(sp.packet.agent_decisions.len(), 8);
-        // Public key matches stark's default.
-        assert_eq!(sp.public_key_hex, "11".repeat(32));
+        // Public key matches stark's real pubkey (from SignerService).
+        let stark_signer =
+            themis_evidence::signer::SignerService::for_tenant("stark").unwrap();
+        assert_eq!(sp.public_key_hex, stark_signer.public_key_hex());
         // Framework mappings all true.
         assert_eq!(sp.packet.framework_mappings.coverage_count(), 7);
     }

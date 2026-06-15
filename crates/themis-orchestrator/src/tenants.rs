@@ -3,6 +3,12 @@
 //! Stark Industries and Wayne Enterprises on 2 trust domains with
 //! distinct keypairs, 1 persistent parent room per tenant + N
 //! sub-rooms per invoice, zero cross-tenant data leakage.
+//!
+//! The `ed25519_public_key_hex` field on each `Tenant` is derived
+//! from `themis_evidence::signer::SignerService::for_tenant(tenant_id)`
+//! — i.e. the same `SignerService` that produces the per-tenant
+//! signatures. This guarantees that the pubkey shown in the PDF /
+//! JSON packet is the *real* Ed25519 public key, not a placeholder.
 
 use std::collections::HashMap;
 
@@ -20,6 +26,7 @@ pub struct Tenant {
     /// Stable key identifier (for rotation logs).
     pub key_id: String,
     /// Hex-encoded Ed25519 public key (32 bytes = 64 hex chars).
+    /// Derived from `SignerService::for_tenant(id).public_key_hex()`.
     pub ed25519_public_key_hex: String,
 }
 
@@ -75,31 +82,43 @@ pub struct TenantRegistry {
 
 impl TenantRegistry {
     /// New registry with 2 default tenants: stark (Stark Industries)
-    /// and wayne (Wayne Enterprises). Distinct key_ids and Ed25519
-    /// public keys so the byte-diff test in `isolation.rs` sees
-    /// them differ.
+    /// and wayne (Wayne Enterprises). Each `ed25519_public_key_hex`
+    /// is derived from `SignerService::for_tenant(id).public_key_hex()`,
+    /// so the pubkey in the registry matches the pubkey used for
+    /// real Ed25519 signing. Panics at startup if the per-tenant
+    /// seed file is missing (fail-fast — better than a placeholder
+    /// that passes tests but breaks the demo).
     pub fn with_default_tenants() -> Self {
         let mut tenants = HashMap::new();
-        tenants.insert(
-            "stark".to_string(),
-            Tenant {
-                id: "stark".to_string(),
-                name: "Stark Industries".to_string(),
-                key_id: "stark-prod-2026-01".to_string(),
-                // Deterministic-but-distinct placeholder keys. Real
-                // keys come from `keys/stark.ed25519` at runtime.
-                ed25519_public_key_hex: "11".repeat(32),
-            },
-        );
-        tenants.insert(
-            "wayne".to_string(),
-            Tenant {
-                id: "wayne".to_string(),
-                name: "Wayne Enterprises".to_string(),
-                key_id: "wayne-prod-2026-01".to_string(),
-                ed25519_public_key_hex: "22".repeat(32),
-            },
-        );
+        for (id, name, key_id) in [
+            (
+                "stark",
+                "Stark Industries",
+                "stark-prod-2026-01",
+            ),
+            (
+                "wayne",
+                "Wayne Enterprises",
+                "wayne-prod-2026-01",
+            ),
+        ] {
+            let signer = themis_evidence::signer::SignerService::for_tenant(id)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "SignerService::for_tenant({id}) failed at startup: {e}. \
+                         Seed file missing? Baked keys are at crates/themis-evidence/keys/."
+                    )
+                });
+            tenants.insert(
+                id.to_string(),
+                Tenant {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    key_id: key_id.to_string(),
+                    ed25519_public_key_hex: signer.public_key_hex(),
+                },
+            );
+        }
         Self {
             tenants,
             rooms: DashMap::new(),
@@ -180,6 +199,25 @@ mod tests {
         assert_eq!(wayne.name, "Wayne Enterprises");
         assert_ne!(stark.key_id, wayne.key_id);
         assert_ne!(stark.ed25519_public_key_hex, wayne.ed25519_public_key_hex);
+        // Real Ed25519 pubkey is 32 bytes = 64 hex chars; both
+        // tenants must have a real (non-placeholder) pubkey.
+        assert_eq!(stark.ed25519_public_key_hex.len(), 64);
+        assert_eq!(wayne.ed25519_public_key_hex.len(), 64);
+        // The registry pubkey must match what the SignerService
+        // returns for the same tenant. This is the contract that
+        // makes `themis-verify` work end-to-end.
+        let stark_signer =
+            themis_evidence::signer::SignerService::for_tenant("stark").unwrap();
+        let wayne_signer =
+            themis_evidence::signer::SignerService::for_tenant("wayne").unwrap();
+        assert_eq!(
+            stark.ed25519_public_key_hex,
+            stark_signer.public_key_hex()
+        );
+        assert_eq!(
+            wayne.ed25519_public_key_hex,
+            wayne_signer.public_key_hex()
+        );
     }
 
     #[test]

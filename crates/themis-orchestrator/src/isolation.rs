@@ -89,9 +89,14 @@ mod tests {
         // blake3_hash_hex differs (canonical JSON includes tenant_id).
         assert_ne!(stark.blake3_hash_hex, wayne.blake3_hash_hex);
 
-        // Stark has the stark key; wayne has the wayne key.
-        assert_eq!(stark.public_key_hex, "11".repeat(32));
-        assert_eq!(wayne.public_key_hex, "22".repeat(32));
+        // Stark has the stark key; wayne has the wayne key (both
+        // real Ed25519 pubkeys, derived from SignerService at startup).
+        let stark_signer =
+            themis_evidence::signer::SignerService::for_tenant("stark").unwrap();
+        let wayne_signer =
+            themis_evidence::signer::SignerService::for_tenant("wayne").unwrap();
+        assert_eq!(stark.public_key_hex, stark_signer.public_key_hex());
+        assert_eq!(wayne.public_key_hex, wayne_signer.public_key_hex());
     }
 
     #[tokio::test]
