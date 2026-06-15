@@ -745,12 +745,7 @@ mod tests {
                     }),
                 );
             }
-            let orch = Orchestrator::new(
-                rooms.clone(),
-                agents,
-                // router removed: agents carry their own LLM, no global router needed
-                tenants.clone(),
-            );
+            let orch = Orchestrator::new(rooms.clone(), agents, tenants.clone());
             let sp = orch
                 .process_invoice("stark", &format!("inv-{i:03}"), b"raw".to_vec())
                 .await
