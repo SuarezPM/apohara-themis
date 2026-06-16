@@ -411,97 +411,63 @@ pub fn render_packet_pdf(packet: &SignedPacket) -> Result<Vec<u8>, PdfError> {
     // are set on every packet; HALT only changes the DORA art_17 value.
     let fm = &packet.packet.framework_mappings;
 
-    // DORA Art. 9/10/17
-    write_line(&layer2, "DORA (Reg 2022/2554) - Art. 9/10/17:", 20.0, y2, 10.0, true);
-    y2 -= line_h2;
-    for name in &["art_9_ict_risk_management", "art_10_incident_detection", "art_17_incident_reporting"] {
-        write_line(
-            &layer2,
-            &format!("  [{}] {}", if fm.dora_art_9 { "x" } else { " " }, name),
-            22.0,
-            y2,
-            8.5,
-            false,
-        );
-        y2 -= line_h2;
-    }
-    y2 -= line_h2 * 0.4;
-
-    // EU AI Act Art. 12 + Art. 26
-    write_line(
-        &layer2,
-        "EU AI Act (Reg 2024/1689) - Art. 12 + Art. 26:",
-        20.0,
-        y2,
-        10.0,
-        true,
-    );
-    y2 -= line_h2;
-    let eu_ai_act_fields = [
-        "art_12_1_start_time",
-        "art_12_2_end_time",
-        "art_12_3_reference_database",
-        "art_12_4_input_data",
-        "art_12_5_natural_person_id",
-        "art_12_6_decision_id",
-        "art_12_7_policy_version",
-        "art_12_8_hash_chain_prev",
-        "art_26_deployer_name",
+    // Each framework: (header, field names). The populated-flag
+    // is the framework_mappings boolean at the same index below.
+    const FRAMEWORK_SECTIONS: &[(&str, &[&str])] = &[
+        (
+            "DORA (Reg 2022/2554) - Art. 9/10/17:",
+            &["art_9_ict_risk_management", "art_10_incident_detection", "art_17_incident_reporting"],
+        ),
+        (
+            "EU AI Act (Reg 2024/1689) - Art. 12 + Art. 26:",
+            &[
+                "art_12_1_start_time",
+                "art_12_2_end_time",
+                "art_12_3_reference_database",
+                "art_12_4_input_data",
+                "art_12_5_natural_person_id",
+                "art_12_6_decision_id",
+                "art_12_7_policy_version",
+                "art_12_8_hash_chain_prev",
+                "art_26_deployer_name",
+            ],
+        ),
+        (
+            "NIST AI RMF 1.0 - Govern/Map/Measure/Manage:",
+            &["govern", "map", "measure", "manage"],
+        ),
+        (
+            "OWASP Agentic 2026 - ASI01..ASI10:",
+            &[
+                "ASI01_prompt_injection",
+                "ASI02_sensitive_data_exposure",
+                "ASI03_supply_chain",
+                "ASI04_data_and_model_poisoning",
+                "ASI05_improper_output_handling",
+                "ASI06_excessive_agency",
+                "ASI07_system_prompt_leakage",
+                "ASI08_vector_and_embedding_weaknesses",
+                "ASI09_misinformation",
+                "ASI10_rogue_agents",
+            ],
+        ),
     ];
-    for name in &eu_ai_act_fields {
-        write_line(
-            &layer2,
-            &format!("  [{}] {}", if fm.eu_ai_act_art_12 { "x" } else { " " }, name),
-            22.0,
-            y2,
-            8.5,
-            false,
-        );
+    let flags = [fm.dora_art_9, fm.eu_ai_act_art_12, fm.nist_ai_rmf, fm.owasp_agentic];
+    for ((header, names), &populated) in FRAMEWORK_SECTIONS.iter().zip(flags.iter()) {
+        write_line(&layer2, header, 20.0, y2, 10.0, true);
         y2 -= line_h2;
-    }
-    y2 -= line_h2 * 0.4;
-
-    // NIST AI RMF Govern/Map/Measure/Manage
-    write_line(&layer2, "NIST AI RMF 1.0 - Govern/Map/Measure/Manage:", 20.0, y2, 10.0, true);
-    y2 -= line_h2;
-    for name in &["govern", "map", "measure", "manage"] {
-        write_line(
-            &layer2,
-            &format!("  [{}] {}", if fm.nist_ai_rmf { "x" } else { " " }, name),
-            22.0,
-            y2,
-            8.5,
-            false,
-        );
-        y2 -= line_h2;
-    }
-    y2 -= line_h2 * 0.4;
-
-    // OWASP Agentic 2026 ASI01-ASI10
-    write_line(&layer2, "OWASP Agentic 2026 - ASI01..ASI10:", 20.0, y2, 10.0, true);
-    y2 -= line_h2;
-    let owasp_fields = [
-        "ASI01_prompt_injection",
-        "ASI02_sensitive_data_exposure",
-        "ASI03_supply_chain",
-        "ASI04_data_and_model_poisoning",
-        "ASI05_improper_output_handling",
-        "ASI06_excessive_agency",
-        "ASI07_system_prompt_leakage",
-        "ASI08_vector_and_embedding_weaknesses",
-        "ASI09_misinformation",
-        "ASI10_rogue_agents",
-    ];
-    for name in &owasp_fields {
-        write_line(
-            &layer2,
-            &format!("  [{}] {}", if fm.owasp_agentic { "x" } else { " " }, name),
-            22.0,
-            y2,
-            8.5,
-            false,
-        );
-        y2 -= line_h2;
+        for name in names.iter() {
+            write_line(
+                &layer2,
+                &format!("  [{}] {}", if populated { "x" } else { " " }, name),
+                22.0,
+                y2,
+                8.5,
+                false,
+            );
+            y2 -= line_h2;
+        }
+        y2 -= line_h2 * 0.4;
     }
 
     y2 -= line_h2 * 0.8;
@@ -638,95 +604,71 @@ fn build_condition_matrix(decisions: &[AgentDecision]) -> Vec<(&'static str, Str
     let (risk_score, coherence_score, debate_rounds, has_secret) =
         extract_assessment(decisions);
 
-    let mut rows: Vec<(&'static str, String)> = Vec::with_capacity(5);
+    // explicit_halt is the one field we don't have a typed value
+    // for — read it from the same payload shape, accepting either
+    // `payload.assessment.explicit_halt` or `payload.explicit_halt`.
+    let explicit_halt = decisions.iter().any(|d| {
+        d.payload
+            .get("assessment")
+            .and_then(|a| a.get("explicit_halt"))
+            .and_then(|v| v.as_bool())
+            .or_else(|| {
+                d.payload
+                    .get("explicit_halt")
+                    .and_then(|v| v.as_bool())
+            })
+            .unwrap_or(false)
+    });
 
-    // 1. risk_score > 0.85
-    {
-        let score_str = risk_score
-            .map(|v| format!("{v:.2}"))
-            .unwrap_or_else(|| "n/a".to_string());
-        let tripped = risk_score.is_some_and(|v| v > 0.85);
-        rows.push((
-            if tripped { "fired" } else { "" },
+    vec![
+        condition_row(risk_score.is_some_and(|v| v > 0.85), |v| {
             format!(
                 "[{}] risk_score > 0.85  score={}  {}",
-                if tripped { "X" } else { " " },
-                score_str,
-                if tripped { "FIRED" } else { "pass" }
-            ),
-        ));
-    }
-    // 2. secret leak
-    {
-        let tripped = has_secret;
-        rows.push((
-            if tripped { "fired" } else { "" },
+                if v { "X" } else { " " },
+                risk_score.map(|x| format!("{x:.2}")).unwrap_or_else(|| "n/a".into()),
+                if v { "FIRED" } else { "pass" }
+            )
+        }),
+        condition_row(has_secret, |v| {
             format!(
                 "[{}] secret_leak finding present        {}",
-                if tripped { "X" } else { " " },
-                if tripped { "FIRED" } else { "pass" }
-            ),
-        ));
-    }
-    // 3. coherence_score < 0.3
-    {
-        let score_str = coherence_score
-            .map(|v| format!("{v:.2}"))
-            .unwrap_or_else(|| "n/a".to_string());
-        let tripped = coherence_score.is_some_and(|v| v < 0.3);
-        rows.push((
-            if tripped { "fired" } else { "" },
+                if v { "X" } else { " " },
+                if v { "FIRED" } else { "pass" }
+            )
+        }),
+        condition_row(coherence_score.is_some_and(|v| v < 0.3), |v| {
             format!(
                 "[{}] coherence_score < 0.3  coherence={}  {}",
-                if tripped { "X" } else { " " },
-                score_str,
-                if tripped { "FIRED" } else { "pass" }
-            ),
-        ));
-    }
-    // 4. debate_rounds >= 5
-    {
-        let rounds_str = debate_rounds
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "n/a".to_string());
-        let tripped = debate_rounds.is_some_and(|v| v >= 5);
-        rows.push((
-            if tripped { "fired" } else { "" },
+                if v { "X" } else { " " },
+                coherence_score
+                    .map(|x| format!("{x:.2}"))
+                    .unwrap_or_else(|| "n/a".into()),
+                if v { "FIRED" } else { "pass" }
+            )
+        }),
+        condition_row(debate_rounds.is_some_and(|v| v >= 5), |v| {
             format!(
                 "[{}] debate_rounds >= 5  rounds={}  {}",
-                if tripped { "X" } else { " " },
-                rounds_str,
-                if tripped { "FIRED" } else { "pass" }
-            ),
-        ));
-    }
-    // 5. explicit halt — there's no numeric value to show; the
-    //    operator either pressed the button or didn't.
-    {
-        let explicit = decisions.iter().any(|d| {
-            d.payload
-                .get("assessment")
-                .and_then(|a| a.get("explicit_halt"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or_else(|| {
-                    d.payload
-                        .get("explicit_halt")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-                })
-        });
-        let tripped = explicit;
-        rows.push((
-            if tripped { "fired" } else { "" },
+                if v { "X" } else { " " },
+                debate_rounds.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),
+                if v { "FIRED" } else { "pass" }
+            )
+        }),
+        condition_row(explicit_halt, |v| {
             format!(
                 "[{}] explicit_halt requested         {}",
-                if tripped { "X" } else { " " },
-                if tripped { "FIRED" } else { "pass" }
-            ),
-        ));
-    }
+                if v { "X" } else { " " },
+                if v { "FIRED" } else { "pass" }
+            )
+        }),
+    ]
+}
 
-    rows
+/// One row of the BAAAR matrix. `tripped` decides the bold label;
+/// `line(tripped)` produces the formatted output. Centralizes the
+/// `[X]/[ ]` + `FIRED/pass` pattern shared by all 5 rows.
+fn condition_row<F: FnOnce(bool) -> String>(tripped: bool, line: F) -> (&'static str, String) {
+    (if tripped { "fired" } else { "" }, line(tripped))
 }
 
 /// Pull the live BAAAR inputs from the FraudAuditor's decision
