@@ -2,9 +2,8 @@
 //!
 //! `select_backend()` (US-08) tries `FeatherlessBackend` first
 //! (real LLM call to `api.featherless.ai`), and falls back to
-//! `MockLlmProvider` when the `FEATHERLESS_API_KEY` env var is
-//! unset or empty. The fallback is transparent to the 285-test
-//! suite because:
+//! the mock when the `FEATHERLESS_API_KEY` env var is unset or
+//! empty. The fallback is transparent to the test suite because:
 //!
 //! 1. Tests construct `AppState` directly with their own
 //!    `model_id` and never call `select_backend()`.
@@ -16,9 +15,7 @@
 //! the demo still works. (Real network errors are surfaced by
 //! `FeatherlessBackend::complete` per the trait contract.)
 
-use std::sync::Arc;
-
-use themis_agents::llm::{FeatherlessBackend, LlmBackend, MockLlmProvider};
+use themis_agents::llm::FeatherlessBackend;
 
 /// Model id of the live LLM the demo advertises when
 /// `FEATHERLESS_API_KEY` is set. The cost-1 slot (4 concurrent
@@ -28,22 +25,20 @@ pub const FEATHERLESS_MODEL: &str = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
 
 /// Pick the LLM backend for this run. Tries Featherless first
 /// (real LLM); falls back to `MockLlmProvider` when the env var
-/// is unset or empty. The returned `model_id` is what
+/// is unset or empty. Returns the `model_id` that
 /// `AppState.model_id` advertises to the SSE stream — the
 /// frontend's provider badge reads from there.
-pub fn select_backend() -> (Arc<dyn LlmBackend>, &'static str) {
-    if let Some(featherless) = FeatherlessBackend::from_env(FEATHERLESS_MODEL) {
+pub fn select_backend() -> &'static str {
+    if FeatherlessBackend::from_env(FEATHERLESS_MODEL).is_some() {
         eprintln!(
             "[themis-orchestrator] LLM: FeatherlessBackend({FEATHERLESS_MODEL}) — live"
         );
-        let model_id: &'static str = featherless.model_id();
-        (Arc::new(featherless), model_id)
+        FEATHERLESS_MODEL
     } else {
         eprintln!(
             "[themis-orchestrator] LLM: MockLlmProvider — FEATHERLESS_API_KEY not set, using mock"
         );
-        let model_id: &'static str = "mock-demo";
-        (Arc::new(MockLlmProvider::new(model_id)), model_id)
+        "mock-demo"
     }
 }
 
@@ -72,7 +67,7 @@ mod tests {
         unsafe {
             std::env::remove_var("FEATHERLESS_API_KEY");
         }
-        let (_llm, model_id) = select_backend();
+        let model_id = select_backend();
         assert_eq!(
             model_id, "mock-demo",
             "expected mock fallback when FEATHERLESS_API_KEY is unset, got {model_id}"
@@ -86,7 +81,7 @@ mod tests {
         unsafe {
             std::env::set_var("FEATHERLESS_API_KEY", "");
         }
-        let (_llm, model_id) = select_backend();
+        let model_id = select_backend();
         unsafe {
             std::env::remove_var("FEATHERLESS_API_KEY");
         }
@@ -110,7 +105,7 @@ mod tests {
         unsafe {
             std::env::set_var("FEATHERLESS_API_KEY", "sk-test-dummy-key");
         }
-        let (_llm, model_id) = select_backend();
+        let model_id = select_backend();
         unsafe {
             std::env::remove_var("FEATHERLESS_API_KEY");
         }

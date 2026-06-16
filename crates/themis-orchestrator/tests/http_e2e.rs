@@ -665,7 +665,7 @@ async fn e2e_halting_fixtures_produce_halted_packet() {
         unsafe {
             std::env::remove_var("FEATHERLESS_API_KEY");
         }
-        let (_llm, model_id) = themis_orchestrator::llm_backend::select_backend();
+        let model_id = themis_orchestrator::llm_backend::select_backend();
         assert_eq!(
             model_id, "mock-demo",
             "select_backend should fall back to mock when FEATHERLESS_API_KEY is unset"
@@ -677,7 +677,7 @@ async fn e2e_halting_fixtures_produce_halted_packet() {
         unsafe {
             std::env::set_var("FEATHERLESS_API_KEY", "");
         }
-        let (_llm, model_id) = themis_orchestrator::llm_backend::select_backend();
+        let model_id = themis_orchestrator::llm_backend::select_backend();
         unsafe {
             std::env::remove_var("FEATHERLESS_API_KEY");
         }
@@ -699,7 +699,7 @@ async fn e2e_halting_fixtures_produce_halted_packet() {
         unsafe {
             std::env::set_var("FEATHERLESS_API_KEY", "sk-dummy-invalid-key-for-test");
         }
-        let (_llm, model_id) = themis_orchestrator::llm_backend::select_backend();
+        let model_id = themis_orchestrator::llm_backend::select_backend();
         unsafe {
             std::env::remove_var("FEATHERLESS_API_KEY");
         }

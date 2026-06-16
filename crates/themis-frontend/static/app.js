@@ -8,7 +8,7 @@
  * Wiring (Vercel proxy in production, same-origin in local dev):
  *   POST /invoices            → { run_id, packet_id, compliance }
  *   GET  /packets/:id/pdf     → application/pdf
- *   GET  /events              → SSE event stream (TODO: live transcript)
+ *   GET  /events              → SSE event stream (live transcript)
  *
  * If the backend is unreachable, the page falls back to a clearly-labelled
  * local-fixture demo so the UI is still demonstrable offline.
@@ -111,13 +111,6 @@
   // derived from the SealedPacket — tenant_id, ed25519 pubkey, blake3
   // hash, chain length — to give the judge 4 custom-anchor fields
   // that complement the 22 regulator fields.
-  const FRAMEWORK_LABELS = {
-    dora: 'DORA',
-    eu_ai_act: 'EU AI Act',
-    nist_ai_rmf: 'NIST AI RMF',
-    owasp_agentic: 'OWASP Agentic',
-    acs: 'ACS',
-  };
   const renderComplianceDashboard = (compliance, sealed) => {
     const root = $('#compliance-dashboard');
     if (!root || !compliance) return;
@@ -197,58 +190,6 @@
     root.hidden = true;
   };
 
-  // --- Per-agent deterministic token/cost estimates (used by
-  //     the local-fixture path; the live path uses the response) ---
-  const COST_PER_K = { extractor: 0.005, po_matcher: 0.0001, fraud_auditor: 0.012, gaap_classifier: 0.003, provenance_signer: 0.0001 };
-  const costOf = (name, inT, outT) => ((inT + outT) / 1000) * (COST_PER_K[name] || 0.001);
-
-  // --- Local fixtures (fallback if the live backend is unreachable) ---
-  const FIXTURES = {
-    'clean-001': {
-      tenant: 'stark', invoice: 'inv-clean-001', outcome: 'approved',
-      agents: [
-        { name: 'extractor', in: 2400, out: 180 },
-        { name: 'po_matcher', in: 0, out: 0, note: 'matches' },
-        { name: 'fraud_auditor', in: 1200, out: 220 },
-        { name: 'gaap_classifier', in: 980, out: 110 },
-        { name: 'provenance_signer', in: 0, out: 0, signed: true },
-      ],
-    },
-    'phantom-001': {
-      tenant: 'stark', invoice: 'inv-phantom-001', outcome: 'halted',
-      halt: { reason: 'Phantom vendor — PO not in DB', trigger: 'phantom_vendor', agent: 'fraud_auditor' },
-      agents: [
-        { name: 'extractor', in: 2400, out: 180 },
-        { name: 'po_matcher', in: 0, out: 0, note: 'no match' },
-        { name: 'fraud_auditor', in: 1200, out: 220, halt: true },
-        { name: 'gaap_classifier', in: 0, out: 0, skipped: true },
-        { name: 'provenance_signer', in: 0, out: 0, skipped: true },
-      ],
-    },
-    'math-001': {
-      tenant: 'wayne', invoice: 'inv-math-001', outcome: 'halted',
-      halt: { reason: 'Line items do not sum to total (sum=42000, total=50000)', trigger: 'math_fraud', agent: 'fraud_auditor' },
-      agents: [
-        { name: 'extractor', in: 2400, out: 180 },
-        { name: 'po_matcher', in: 0, out: 0, note: 'matches' },
-        { name: 'fraud_auditor', in: 1200, out: 220, halt: true },
-        { name: 'gaap_classifier', in: 0, out: 0, skipped: true },
-        { name: 'provenance_signer', in: 0, out: 0, skipped: true },
-      ],
-    },
-    'duplicate-001': {
-      tenant: 'wayne', invoice: 'inv-dup-001', outcome: 'halted',
-      halt: { reason: 'Duplicate of inv-2026-05-28-7 (same vendor+amount+date)', trigger: 'duplicate', agent: 'fraud_auditor' },
-      agents: [
-        { name: 'extractor', in: 2400, out: 180 },
-        { name: 'po_matcher', in: 0, out: 0, note: 'matches' },
-        { name: 'fraud_auditor', in: 1200, out: 220, halt: true },
-        { name: 'gaap_classifier', in: 0, out: 0, skipped: true },
-        { name: 'provenance_signer', in: 0, out: 0, skipped: true },
-      ],
-    },
-  };
-
   // --- Cost rates (USD per 1K tokens) ---
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const nowMs = () => Date.now();
@@ -257,89 +198,6 @@
   let lastPacketId = null;
   let lastTenant = null;
   let lastInvoice = null;
-
-  // --- Local-fixture run (fallback path) ---
-  const runLocalFixture = async (fixtureId) => {
-    const fx = FIXTURES[fixtureId];
-    if (!fx) return;
-    const tenant = $('#tenant-switch').value;
-    const btn = $('#playground-submit') || $('#submit-btn');
-    setButtonState(btn, 'loading', 'Running…');
-    resetUi();
-    // Drive the cells + transcript
-    for (const agent of fx.agents) {
-      setCell(agent.name, {}, 'running');
-      await sleep(120);
-      const note = agent.note ? ` ${agent.note}.` : (agent.halt ? ` HALT: ${fx.halt.reason}.` : (agent.signed ? ' Sealed.' : ' ok.'));
-      appendTranscript({ from: agent.name, body: note, tsMs: nowMs(), halt: !!agent.halt });
-      const payload = {
-        in: agent.skipped ? '—' : fmt.format(agent.in || 0),
-        out: agent.skipped ? '—' : fmt.format(agent.out || 0),
-        cost: agent.skipped ? '—' : fmtUsd(costOf(agent.name, agent.in || 0, agent.out || 0)),
-      };
-      setCell(agent.name, payload, agent.halt ? 'halted' : 'done');
-      if (agent.halt) {
-        showHalt({ reason: fx.halt.reason, trigger: fx.halt.trigger, agent: fx.halt.agent, tenant, invoice: fx.invoice, tsMs: nowMs() });
-        populateEvidence({ status: 'HALTED (BAAAR)', tenant, invoice: fx.invoice, decisions: 'halted at fraud_auditor', coverage: 'partial (halted)' });
-        setButtonState(btn, 'success', 'Halted · see receipt');
-        setTimeout(() => setButtonState(btn, 'default', 'Run audit'), 2400);
-        return;
-      }
-    }
-    appendTranscript({ from: 'audit_watchdog', body: 'Chain coherent.', tsMs: nowMs() });
-    populateEvidence({ status: 'APPROVED (demo fixture)', tenant, invoice: fx.invoice, decisions: '5/5', coverage: 'demo (local fixture)' });
-    // Render the dashboard with a synthesized 26/26 fixture so the
-    // offline demo path also surfaces the regulator coverage grid.
-    renderComplianceDashboard(buildLocalFixtureCompliance(), null);
-    setButtonState(btn, 'success', 'Sealed · see receipt');
-    setTimeout(() => setButtonState(btn, 'default', 'Run audit'), 2400);
-  };
-
-  // --- Synthesized ComplianceReport for the local-fixture path.
-  //     Mirrors the live response shape (4 frameworks, 22 fields
-  //     + 4 ACS = 26) so the dashboard renders identically.
-  const buildLocalFixtureCompliance = () => ({
-    total_fields: 22,
-    total_populated: 22,
-    coverage_pct: 1.0,
-    ac8_pass: true,
-    ac15_pass: true,
-    frameworks: [
-      { framework: 'dora', populated: 3, total: 3, fields: [
-        ['art_9_ict_risk_management', { mechanism: 'BaaarGate (5 conditions)' }],
-        ['art_10_incident_detection', { agent: 'audit_watchdog', coherence_score: 0.92 }],
-        ['art_17_incident_reporting', { outcome: 'no_incident', reporting_window_hours: 0, mock_recipient: 'NCA-ES' }],
-      ]},
-      { framework: 'eu_ai_act', populated: 9, total: 9, fields: [
-        ['art_12_1_start_time', 0], ['art_12_2_end_time', 0],
-        ['art_12_3_reference_database', 'keys/po-database/stark.json'],
-        ['art_12_4_input_data', { first_decision_payload_blake3: '—' }],
-        ['art_12_5_natural_person_id', 'operator@stark.local'],
-        ['art_12_6_decision_id', '00000000-0000-0000-0000-000000000001'],
-        ['art_12_7_policy_version', 'themis-policy@2026-06-12'],
-        ['art_12_8_hash_chain_prev', 'genesis (no predecessor)'],
-        ['art_26_deployer_name', 'stark'],
-      ]},
-      { framework: 'nist_ai_rmf', populated: 4, total: 4, fields: [
-        ['govern', { mechanism: 'InvoiceState state machine' }],
-        ['map', { trust_domain: 'stark' }],
-        ['measure', { mean_confidence: 0.9, outcome: 'approve' }],
-        ['manage', { evidence_packet_signed: true }],
-      ]},
-      { framework: 'owasp_agentic', populated: 10, total: 10, fields: [
-        ['ASI01_prompt_injection', 'mitigated'],
-        ['ASI02_sensitive_data_exposure', 'mitigated'],
-        ['ASI03_supply_chain', 'not_assessed'],
-        ['ASI04_data_and_model_poisoning', 'not_assessed'],
-        ['ASI05_improper_output_handling', 'not_assessed'],
-        ['ASI06_excessive_agency', 'mitigated'],
-        ['ASI07_system_prompt_leakage', 'not_assessed'],
-        ['ASI08_vector_and_embedding_weaknesses', 'not_assessed'],
-        ['ASI09_misinformation', 'not_assessed'],
-        ['ASI10_rogue_agents', 'mitigated'],
-      ]},
-    ],
-  });
 
   // --- Live backend run (the real path) ---
   const runLiveAudit = async (tenant, invoice, rawB64) => {
@@ -526,7 +384,6 @@
   // identically to a real backend run.
   const CUSTOM_OPTION_VALUE = '__custom__';
   const FIXTURE_NONE = '__loading__';
-  let cachedFixtures = []; // [{ tenant_id, invoice_id, label, expected_verdict, expected_halt_reason, raw_b64 }]
 
   const setSelectedSummary = (text, cls) => {
     const el = $('#playground-selected');
@@ -601,7 +458,6 @@
       const data = await resp.json();
       const fixtures = (data && data.fixtures) || [];
       if (fixtures.length === 0) throw new Error('no fixtures returned');
-      cachedFixtures = fixtures;
       populateFixtureDropdown(fixtures);
       updateSelectedSummary();
     } catch (e) {

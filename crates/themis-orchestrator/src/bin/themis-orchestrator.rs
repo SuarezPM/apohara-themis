@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // FEATHERLESS_API_KEY is set, otherwise fall back to the mock.
     // The returned `model_id` drives AppState.model_id, which the
     // frontend's provider badge reads from the SSE stream.
-    let (llm, model_id) = select_backend();
+    let model_id = select_backend();
 
     // Build the 8 demo agents (extractor, po_matcher,
     // fraud_auditor, gaap_classifier, provenance_signer,
@@ -80,7 +80,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             name.to_string(),
             Arc::new(StubAgent {
                 name,
-                llm: llm.clone(),
                 fixture_lookup: fixture_lookup.clone(),
             }),
         );
@@ -153,8 +152,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// so the live demo's HALT path is real for judges.
 struct StubAgent {
     name: &'static str,
-    #[allow(dead_code)]
-    llm: Arc<dyn themis_agents::llm::LlmBackend>,
     fixture_lookup: std::sync::Arc<HashMap<(String, String), DemoFixture>>,
 }
 
