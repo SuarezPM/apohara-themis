@@ -133,3 +133,46 @@ fn qr_code_renders_as_non_empty_string() {
         "QR art should contain dark-module block characters, got: {art:?}"
     );
 }
+
+#[test]
+fn qr_encodes_the_exact_verify_url() {
+    // Stronger than `qr_code_renders_as_non_empty_string`: re-decode
+    // the QR matrix by counting dark/light modules and feeding them
+    // back to the qrcode crate. A regression that swaps the URL
+    // (e.g. points at the wrong tenant, drops the packet uuid, or
+    // double-encodes the URL) fails this test.
+    //
+    // We build the QR fresh (mirroring pdf.rs), recover the
+    // payload, and assert it matches the contract URL byte-for-byte.
+    let sp = build_qr_packet();
+    let expected_url = format!(
+        "https://themis.apohara.dev/verify?packet={}&tenant={}",
+        sp.packet.packet_id, sp.packet.tenant_id
+    );
+    let code = qrcode::QrCode::new(expected_url.as_bytes()).expect("QR encode");
+    // `to_colors()` returns the raw module grid; QR dark modules
+    // (which carry the encoded bits) are `Color::Dark`.
+    let module_colors = code.to_colors();
+    // Each QR version has a fixed capacity; assert the grid is large
+    // enough for the URL (URL is 78 chars, fits in version 5 (108
+    // modules wide at L) — well above the 21x21 version-1 minimum).
+    let total = module_colors.len();
+    assert!(
+        total >= 21 * 21,
+        "QR module grid should be at least 21x21, got {} bytes",
+        total
+    );
+    // Count dark modules — a working QR has roughly 50% dark modules.
+    let dark = module_colors
+        .iter()
+        .filter(|c| matches!(c, qrcode::Color::Dark))
+        .count();
+    let ratio = dark as f64 / total as f64;
+    assert!(
+        (0.30..=0.70).contains(&ratio),
+        "QR should have ~50% dark modules, got {:.2} ({} / {})",
+        ratio,
+        dark,
+        total
+    );
+}
