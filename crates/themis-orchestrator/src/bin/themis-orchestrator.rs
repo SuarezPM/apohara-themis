@@ -110,6 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reports: dashmap::DashMap::new(),
         packets: dashmap::DashMap::new(),
         sealed: dashmap::DashMap::new(),
+        model_id: llm.model_id().to_string(),
     };
 
     // Touch tsa so the unused-warning stays out of release builds

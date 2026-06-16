@@ -62,7 +62,7 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
                 model_id: "snapshot-mock".to_string(),
             }),
     );
-    let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm, None);
+    let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm.clone(), None);
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let orch = Orchestrator::new_with_rekor(
@@ -78,6 +78,7 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
         reports: dashmap::DashMap::new(),
         packets: dashmap::DashMap::new(),
         sealed: dashmap::DashMap::new(),
+        model_id: mock_llm.model_id().to_string(),
     };
     build_router(state)
 }

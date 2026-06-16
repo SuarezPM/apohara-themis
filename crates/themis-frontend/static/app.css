@@ -158,6 +158,27 @@
 }
 @media (prefers-reduced-motion: reduce) { .n6__live-dot { animation: none; } }
 
+/* Active LLM model badge — fed by the ProviderActive SSE event so
+   the judge can see whether the demo is hitting a real provider
+   (Qwen3-Coder-30B) or the mock-fallback. Subtle gold-on-navy. */
+.n6__model {
+  display: flex; align-items: center; gap: var(--space-xs);
+  flex: 0 0 auto;
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  color: var(--accent); min-width: 0;
+  padding-left: var(--space-md);
+  border-left: 1px solid var(--line);
+  margin-left: var(--space-md);
+}
+.n6__model-label {
+  color: var(--ink-faint);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.n6__model-id {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
 /* ───── main + wrap ───── */
 main { padding-top: 96px; }
 .wrap { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 var(--space-lg); }

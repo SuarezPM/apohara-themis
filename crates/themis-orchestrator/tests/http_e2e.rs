@@ -83,7 +83,7 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
                 model_id: "e2e-mock".to_string(),
             }),
     );
-    let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm, None);
+    let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm.clone(), None);
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let orch = Orchestrator::new_with_rekor(
@@ -100,6 +100,7 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
         reports: dashmap::DashMap::new(),
         packets: dashmap::DashMap::new(),
         sealed: dashmap::DashMap::new(),
+        model_id: mock_llm.model_id().to_string(),
     };
     build_router(state)
 }
@@ -506,4 +507,137 @@ async fn e2e_halting_fixtures_produce_halted_packet() {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    /// The SSE stream must carry a `provider_active` event with a
+    /// `model_id` field (US-03: visible signal of which LLM the
+    /// demo is hitting). We open `/events`, POST an invoice to seed
+    /// the bus, then read events until we see the `provider_active`
+    /// type and assert `model_id` is a non-empty string. We do this
+    /// via the EventBus (not the raw HTTP stream) because the SSE
+    /// wire format requires keeping the response open across the
+    /// POST, which complicates oneshot() tests. The bus is the same
+    /// source the SSE handler serializes from.
+    #[tokio::test]
+    async fn e2e_provider_active_event_includes_model_id() {
+        use themis_orchestrator::events::Event;
+        // We need the AppState to subscribe to the bus BEFORE the
+        // POST fires (so the broadcast is delivered). Rebuild the
+        // state with a captured bus for this test only.
+        let f = load_fixture("wayne-002.json");
+        let mock_llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(
+            MockLlmProvider::new("e2e-sse-mock")
+                .with_response(
+                    &f.invoice_id,
+                    LlmResponse {
+                        text: serde_json::to_string(&f.extracted).unwrap(),
+                        input_tokens: 256,
+                        output_tokens: 128,
+                        model_id: "e2e-sse-mock".to_string(),
+                    },
+                )
+                .with_response(
+                    "assess_fraud_risk",
+                    LlmResponse {
+                        text: serde_json::json!({
+                            "assessment": {
+                                "risk_score": f.fraud_assessment.risk_score,
+                                "findings": [{
+                                    "kind": "other",
+                                    "value": "fixture",
+                                    "description": f.halt_reason_human.clone().unwrap_or_default(),
+                                }],
+                                "coherence_score": f.fraud_assessment.coherence_score,
+                                "debate_rounds": f.fraud_assessment.debate_rounds,
+                                "explicit_halt": f.fraud_assessment.explicit_halt,
+                            },
+                            "outcome": themis_orchestrator::test_support::expected_outcome_string(&f),
+                        })
+                        .to_string(),
+                        input_tokens: 256,
+                        output_tokens: 64,
+                        model_id: "e2e-sse-mock".to_string(),
+                    },
+                )
+                .with_default(LlmResponse {
+                    text: serde_json::json!({"stub":"ok"}).to_string(),
+                    input_tokens: 64,
+                    output_tokens: 32,
+                    model_id: "e2e-sse-mock".to_string(),
+                }),
+        );
+        let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm.clone(), None);
+        let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
+        let tenants = Arc::new(TenantRegistry::with_default_tenants());
+        let orch = Orchestrator::new_with_rekor(
+            rooms,
+            agents,
+            tenants,
+            Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
+        );
+        let bus = Arc::new(themis_orchestrator::events::EventBus::new(1024));
+        let mut rx = bus.subscribe();
+        let state = AppState {
+            orchestrator: Arc::new(tokio::sync::Mutex::new(orch)),
+            event_bus: bus,
+            compliance: Arc::new(themis_compliance::service::ComplianceService::new()),
+            reports: dashmap::DashMap::new(),
+            packets: dashmap::DashMap::new(),
+            sealed: dashmap::DashMap::new(),
+            model_id: mock_llm.model_id().to_string(),
+        };
+        let app = build_router(state);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/invoices")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"tenant_id":"wayne","invoice_id":"sse-001","raw_b64":""}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        // Also assert the JSON response carries the same model_id
+        // (so the frontend can render the badge from the POST body
+        // alone, without depending on the SSE reconnection timing).
+        let body = to_bytes(resp.into_body(), MAX_BODY).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            v["model_id"].as_str(),
+            Some("e2e-sse-mock"),
+            "POST /invoices response should include model_id"
+        );
+
+        // Drain the bus; expect at least one ProviderActive event.
+        // This is the same data the SSE handler serializes to the
+        // wire (http.rs: serde_json::to_string(&event)).
+        let mut provider_active = None;
+        for _ in 0..16 {
+            match rx.try_recv() {
+                Ok(Event::ProviderActive { model_id, .. }) => {
+                    provider_active = Some(model_id);
+                    break;
+                }
+                Ok(_) => continue,
+                Err(_) => break,
+            }
+        }
+        let model_id = provider_active.expect("expected ProviderActive event on bus");
+        assert_eq!(model_id, "e2e-sse-mock");
+
+        // Also serialize to JSON (mirroring what the SSE handler
+        // ships to the browser) and assert the wire shape carries
+        // the model_id key under the provider_active type tag.
+        let wire = serde_json::to_value(&Event::ProviderActive {
+            run_id: uuid::Uuid::new_v4(),
+            model_id: "e2e-sse-mock".to_string(),
+        })
+        .unwrap();
+        assert_eq!(wire["type"], "provider_active");
+        assert_eq!(wire["model_id"], "e2e-sse-mock");
     }

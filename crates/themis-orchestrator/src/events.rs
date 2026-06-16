@@ -58,6 +58,18 @@ pub enum Event {
         /// The run id.
         run_id: Uuid,
     },
+    /// Announces the LLM provider + model that will serve the next
+    /// run. Emitted once per `POST /invoices` (before the orchestrator
+    /// starts walking the agent chain) so the SSE-fed frontend can
+    /// show a live "model badge" — the visible signal that the demo
+    /// is hitting a real provider (or the mock fallback) right now.
+    ProviderActive {
+        /// The run id this announcement belongs to.
+        run_id: Uuid,
+        /// Model id (e.g. `"Qwen/Qwen3-Coder-30B-A3B-Instruct"` for
+        /// a real backend, `"mock-fallback"` for the mock).
+        model_id: String,
+    },
 }
 
 impl Event {
@@ -69,6 +81,7 @@ impl Event {
             Event::BaaarHalt { .. } => "baaar_halt",
             Event::EvidenceSealed { .. } => "evidence_sealed",
             Event::RunFinished { .. } => "run_finished",
+            Event::ProviderActive { .. } => "provider_active",
         }
     }
 }
@@ -198,5 +211,33 @@ mod tests {
             }
             _ => panic!("expected BaaarHalt"),
         }
+    }
+
+    #[tokio::test]
+    async fn provider_active_event_carries_model_id() {
+        let bus = EventBus::new(16);
+        let mut rx = bus.subscribe();
+        let run_id = Uuid::new_v4();
+        bus.publish(Event::ProviderActive {
+            run_id,
+            model_id: "Qwen/Qwen3-Coder-30B-A3B-Instruct".to_string(),
+        });
+        let ev = rx.recv().await.unwrap();
+        assert_eq!(ev.type_str(), "provider_active");
+        match ev {
+            Event::ProviderActive { model_id, .. } => {
+                assert_eq!(model_id, "Qwen/Qwen3-Coder-30B-A3B-Instruct");
+            }
+            _ => panic!("expected ProviderActive"),
+        }
+        // JSON shape: tagged with `type: "provider_active"` and
+        // carries the model_id field.
+        let v = serde_json::to_value(&Event::ProviderActive {
+            run_id,
+            model_id: "mock-fallback".to_string(),
+        })
+        .unwrap();
+        assert_eq!(v["type"], "provider_active");
+        assert_eq!(v["model_id"], "mock-fallback");
     }
 }

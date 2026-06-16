@@ -51,6 +51,16 @@
     n.textContent = String(parseInt(n.textContent, 10) + 1);
   };
 
+  // --- Model badge: updated on every ProviderActive SSE event.
+  //     The initial state ([model: unknown]) is rendered server-side
+  //     in index.html; the SSE listener flips it as soon as the
+  //     orchestrator announces the active LLM at run start. ---
+  const setModelBadge = (modelId) => {
+    const el = $('#n6-model-id');
+    if (!el) return;
+    el.textContent = `[model: ${modelId}]`;
+  };
+
   // --- Cell state + token/cost update ---
   const setCell = (id, payload, state) => {
     const cell = $(`#cell-${id}`);
@@ -218,6 +228,11 @@
     lastPacketId = data.packet_id;
     lastTenant = tenant;
     lastInvoice = invoice;
+    // Set the model badge from the POST response immediately; the
+    // SSE listener keeps it in sync for any subsequent runs.
+    if (typeof data.model_id === 'string' && data.model_id.length > 0) {
+      setModelBadge(data.model_id);
+    }
 
     // Update cells: all 8 agents ran (the orchestrator walks them in
     // sequence; we don't expose per-agent in the response, so we
@@ -367,4 +382,34 @@
   const params = new URLSearchParams(window.location.search);
   if (params.has('v')) $('#ft7-version').textContent = params.get('v');
   if (params.has('sha')) $('#ft7-commit').textContent = params.get('sha').slice(0, 7);
+
+  // --- Live SSE listener: keeps the model badge (and any future
+  //     live state) in sync with what the orchestrator announces.
+  //     The backend publishes a `provider_active` event at the
+  //     start of every POST /invoices; we update the badge
+  //     immediately so the judge sees "which model is this
+  //     hitting right now" in real time. ---
+  const connectSse = () => {
+    let es;
+    try {
+      es = new EventSource('/events');
+    } catch (e) {
+      // EventSource unsupported or backend down — leave badge as-is.
+      return;
+    }
+    es.addEventListener('provider_active', (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data && typeof data.model_id === 'string' && data.model_id.length > 0) {
+          setModelBadge(data.model_id);
+        }
+      } catch (_e) {
+        // Malformed payload — ignore, badge keeps prior state.
+      }
+    });
+    es.onerror = () => {
+      // Browser will auto-reconnect; nothing to do.
+    };
+  };
+  connectSse();
 })();

@@ -58,6 +58,10 @@ pub struct AppState {
     /// endpoint serves this directly. Empty when the binary is built
     /// without the evidence wiring (mock-only path).
     pub sealed: DashMap<uuid::Uuid, SealedPacket>,
+    /// LLM provider model id announced to the SSE stream at the
+    /// start of every run. Comes from `LlmBackend::model_id()` at
+    /// binary startup; defaults to `"mock-fallback"` in tests.
+    pub model_id: String,
 }
 
 /// Build the axum Router with all routes.
@@ -162,6 +166,14 @@ async fn post_invoices(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let raw = base64_decode(&req.raw_b64).unwrap_or_default();
     let run_id = uuid::Uuid::new_v4();
+    // Announce the LLM provider/model before any work begins so the
+    // SSE-fed frontend can update the "model badge" immediately.
+    // This is the visible signal that the demo is hitting a real
+    // provider (e.g. Qwen3-Coder-30B) or the mock-fallback.
+    state.event_bus.publish(Event::ProviderActive {
+        run_id,
+        model_id: state.model_id.clone(),
+    });
     state.event_bus.publish(Event::AgentStarted {
         run_id,
         agent: "extractor".to_string(),
@@ -223,6 +235,7 @@ async fn post_invoices(
         "run_id": run_id,
         "packet_id": packet.packet.packet_id,
         "compliance": report,
+        "model_id": state.model_id,
     })))
 }
 
@@ -423,6 +436,7 @@ mod tests {
             reports: DashMap::new(),
             packets: DashMap::new(),
             sealed: DashMap::new(),
+            model_id: "mock-fallback".to_string(),
         }
     }
 
@@ -524,12 +538,14 @@ mod tests {
         let mut started = false;
         let mut sealed = false;
         let mut finished = false;
+        let mut provider_active = false;
         for _ in 0..8 {
             if let Ok(ev) = rx.try_recv() {
                 match ev {
                     Event::AgentStarted { .. } => started = true,
                     Event::EvidenceSealed { .. } => sealed = true,
                     Event::RunFinished { .. } => finished = true,
+                    Event::ProviderActive { .. } => provider_active = true,
                     _ => {}
                 }
             } else {
@@ -539,6 +555,7 @@ mod tests {
         assert!(started);
         assert!(sealed);
         assert!(finished);
+        assert!(provider_active, "ProviderActive event should be published");
     }
 
     #[tokio::test]
