@@ -31,6 +31,7 @@ hyper = "1"
 base64 = "0.22"
 tokio-stream = { version = "0.1", features = ["sync"] }
 printpdf = "0.7"
+qrcode = "0.14"
 
 [dev-dependencies]
 tokio = { workspace = true }

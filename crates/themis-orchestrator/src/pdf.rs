@@ -346,12 +346,43 @@ pub fn render_packet_pdf(packet: &SignedPacket) -> Result<Vec<u8>, PdfError> {
         );
     }
 
-    // --- Footer ---
+    // --- Footer: QR code + offline-verify hint ---
+    // The QR encodes the public verify URL so a judge can scan it
+    // from a phone and reach themis.apohara.dev/verify without
+    // retyping the URL. Dense1x2 uses 2 rows per output line, keeping
+    // the QR visually square in a monospace column.
+    let verify_url = format!(
+        "https://themis.apohara.dev/verify?packet={}&tenant={}",
+        packet.packet.packet_id, packet.packet.tenant_id
+    );
+    let qr = qrcode::QrCode::new(verify_url.as_bytes())
+        .map_err(|e| PdfError::Save(format!("QR encode error: {e}")))?;
+    let qr_art: String = qr
+        .render::<qrcode::render::unicode::Dense1x2>()
+        .quiet_zone(true)
+        .build();
+
+    // Place the QR above the existing footer text. Each line of
+    // qr_art represents 2 source rows of the QR matrix; with 8.0pt
+    // monospace that's ~2.6mm per line.
+    let qr_line_h: f32 = 2.6;
+    let qr_lines: Vec<&str> = qr_art.lines().collect();
+    let qr_total_h = qr_lines.len() as f32 * qr_line_h;
+    let mut qr_y = 18.0 + qr_total_h + 4.0;
+    // Clamp to the page if the QR is unexpectedly tall.
+    if qr_y > 60.0 {
+        qr_y = 60.0;
+    }
+    for line in &qr_lines {
+        write_line(&layer, line, 20.0, qr_y, 8.0, false);
+        qr_y -= qr_line_h;
+    }
+
     write_line(
         &layer,
         "Verify offline with: themis-verify <packet.json> <signature.hex>",
         20.0,
-        20.0,
+        12.0,
         8.0,
         false,
     );
