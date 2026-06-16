@@ -15,7 +15,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](./LICENSE)
 [![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org)
 [![Demo: live](https://img.shields.io/badge/demo-themis.apohara.dev-10b981?style=for-the-badge)](https://themis.apohara.dev)
-[![Tests: 311 / 0](https://img.shields.io/badge/tests-311%20%2F%200-10b981?style=for-the-badge)](#-test-status)
+[![Tests: 298 / 0](https://img.shields.io/badge/tests-298%20%2F%200-10b981?style=for-the-badge)](#-test-status)
 
 <sub>Built for the <a href="https://bandofagents.dev">Band of Agents Hackathon</a> · 12-19 June 2026 · Track 3 — Regulated &amp; High-Stakes Workflows.</sub>
 
@@ -60,7 +60,7 @@ themis-inv-001.pdf: PDF document, version 1.3, 1 page(s)
 $ # 494ms cold download · 2,795 bytes · Ed25519 + BLAKE3 + Rekor anchor embedded
 ```
 
-The **AC1 cold start** is 319 ms (target <800 ms). The **AC12 PDF download** is 494 ms (target <2 s). **311 tests pass, 0 fail**.
+The **AC1 cold start** is 319 ms (target <800 ms). The **AC12 PDF download** is 494 ms (target <2 s). **298 tests pass, 0 fail**.
 
 ---
 
@@ -169,17 +169,20 @@ curl https://themis.apohara.dev/   # the frontend
 
 ---
 
-## Test status (311 / 0)
+## Test status (298 / 0)
 
 | Suite | What it covers | Count |
 |-------|----------------|-------|
-| `tests/http_e2e.rs` | E2E of the live Router via `tower::ServiceExt::oneshot` — 9 paths matching the Vercel proxy surface | 9 |
+| `tests/http_e2e.rs` | E2E of the live Router via `tower::ServiceExt::oneshot` — 9 paths matching the Vercel proxy surface + 4 env-var fallback tests for FeatherlessBackend | 13 |
 | `tests/property_chain.rs` | BLAKE3 invariants (determinism, avalanche, length-extend, order, hex) with `proptest` × 256 | 5 |
-| `tests/snapshot_compliance.rs` | Locks the wire format that the frontend + Vercel proxy depend on (4 frameworks, Art 17 R7 sub-fields) | 2 |
+| `tests/snapshot_compliance.rs` | Locks the wire format (4 frameworks, Art 17 R7 sub-fields) + 3 page-2 PDF tests (2 pages, 26 fields, agent trace) | 5 |
+| `tests/pdf_halt_visual.rs` | PDF HALT stamp + 5-condition matrix + green APPROVED indicator | 2 |
+| `tests/pdf_qr_code.rs` | QR code in PDF footer encoding verify URL | 4 |
+| `tests/compliance_dashboard.rs` | JSON contract for frontend compliance dashboard (26/30 fields) | 4 |
 | `tests/demo_data_loads.rs` | 4 HALT + 1 APPROVED over the 5 Stanford InvoiceNet-shaped fixtures + 4 Rekor anchor tests | 12 |
 | `tests/verify_5_invoices.rs` | Runs `themis-verify` against 5 fixtures (10 invocations total) | 1 |
-| per-crate `#[cfg(test)] mod tests` | signer, chain, packet, rekor, dora, eu_ai_act, nist, owasp, kill_switch, jcr_gate, isolation, prefix_salt, concurrency, etc. | 282 |
-| **Total** | **311 passing, 0 failing** | |
+| per-crate `#[cfg(test)] mod tests` | signer, chain, packet, rekor, dora, eu_ai_act, nist, owasp, llm, llm_backend, fixtures, etc. | 252 |
+| **Total** | **298 passing, 0 failing** | |
 
 ```bash
 cargo test --workspace
