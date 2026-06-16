@@ -2,15 +2,18 @@
 //! the Evidence Packet PDF.
 //!
 //! These tests build a `SignedPacket`, render it via
-//! `render_packet_pdf`, and verify the output is a structurally
-//! well-formed PDF (`%PDF-` magic, size > 1 KB).
+//! `render_packet_pdf`, and verify the output PDF (a) starts with
+//! `%PDF-`, (b) is at least 1 KB, and (c) contains the expected
+//! rendered text content (HALT stamp, REASON line, BAAAR condition
+//! matrix for the halt case; APPROVED marker for the approve case).
 //!
-//! Limitation: we do NOT parse the rendered PDF text. The
-//! `printpdf` 0.7 byte stream is not easy to extract text from
-//! without a dedicated parser crate, and the test contract from the
-//! story is "the function does not panic and produces a valid PDF
-//! for both Halt and Approve fixtures". A future story can add a
-//! `lopdf`-based content check if needed.
+//! printpdf 0.7 emits text in content streams as hex literals like
+//! `<48414c54>`, so the raw bytes don't match a string literal
+//! without decoding. We use a `decode_pdf_text` helper that walks
+//! the PDF byte stream, decodes every `<hex>` literal, and also
+//! passes through printable ASCII so unencoded markers are
+//! searchable. This is the same pattern used in
+//! `snapshot_compliance.rs`.
 
 use themis_agents::baaar::{BaaarReason, Outcome};
 use themis_agents::decision::{AgentDecision, DecisionType};
@@ -79,6 +82,52 @@ fn build_approve_packet() -> SignedPacket {
     SignedPacket::wrap(packet, "00".repeat(64), "11".repeat(32))
 }
 
+/// Decode the text content of a printpdf-rendered PDF into a single
+/// `String`. printpdf 0.7 emits text in content streams as hex
+/// literals like `<48414c54>`; raw bytes of the field names won't
+/// match without decoding. We also concatenate the outer
+/// (non-stream) PDF text so any unencoded content (e.g. the
+/// /Count 2 marker) is also searchable. Mirrors the helper in
+/// `snapshot_compliance.rs`.
+fn decode_pdf_text(pdf: &[u8]) -> String {
+    let mut out = String::with_capacity(pdf.len());
+    let mut i = 0;
+    while i < pdf.len() {
+        if pdf[i] == b'<' && i + 1 < pdf.len() && (pdf[i + 1].is_ascii_hexdigit()) {
+            // hex string literal
+            let mut j = i + 1;
+            while j < pdf.len() && pdf[j] != b'>' {
+                j += 1;
+            }
+            if j >= pdf.len() {
+                break;
+            }
+            let hex = &pdf[i + 1..j];
+            if hex.len() % 2 == 0 {
+                let mut decoded = Vec::with_capacity(hex.len() / 2);
+                let mut k = 0;
+                while k + 1 < hex.len() {
+                    let pair = std::str::from_utf8(&hex[k..k + 2]).unwrap_or("");
+                    if let Ok(b) = u8::from_str_radix(pair, 16) {
+                        decoded.push(b);
+                    }
+                    k += 2;
+                }
+                out.push_str(&String::from_utf8_lossy(&decoded));
+            }
+            i = j + 1;
+        } else {
+            // pass through printable ASCII (so /Count and other markers are found)
+            let c = pdf[i];
+            if (0x20..=0x7e).contains(&c) {
+                out.push(c as char);
+            }
+            i += 1;
+        }
+    }
+    out
+}
+
 #[test]
 fn renders_halt_with_stamp_and_matrix() {
     let sp = build_halt_packet();
@@ -89,6 +138,39 @@ fn renders_halt_with_stamp_and_matrix() {
         bytes.len()
     );
     assert_eq!(&bytes[..5], b"%PDF-", "PDF magic bytes missing");
+
+    // Content assertions: the rendered PDF must contain the HALT
+    // stamp, the REASON line, and at least 3 of the 5 BAAAR
+    // condition labels. A regression that replaces "HALT" with
+    // "STOP" or drops the 24pt stamp will fail here.
+    let decoded = decode_pdf_text(&bytes);
+
+    assert!(
+        decoded.contains("HALT"),
+        "HALT PDF should contain the literal 'HALT' stamp"
+    );
+    assert!(
+        decoded.contains("REASON:"),
+        "HALT PDF should contain the 'REASON:' label followed by the halt reason"
+    );
+
+    let conditions = [
+        "risk_score",
+        "secret_leak",
+        "coherence",
+        "debate_rounds",
+        "explicit_halt",
+    ];
+    let matched: Vec<&str> = conditions
+        .iter()
+        .copied()
+        .filter(|c| decoded.contains(c))
+        .collect();
+    assert!(
+        matched.len() >= 3,
+        "HALT PDF should contain at least 3 of the 5 BAAAR condition labels; matched: {:?}",
+        matched
+    );
 }
 
 #[test]
@@ -101,4 +183,17 @@ fn renders_approve_with_green_indicator() {
         bytes.len()
     );
     assert_eq!(&bytes[..5], b"%PDF-", "PDF magic bytes missing");
+
+    // Content assertions: the approved PDF should show the
+    // APPROVED marker and must NOT contain the big red HALT stamp.
+    let decoded = decode_pdf_text(&bytes);
+
+    assert!(
+        decoded.contains("APPROVED"),
+        "Approve PDF should contain the 'APPROVED' marker"
+    );
+    assert!(
+        !decoded.contains("HALT"),
+        "Approve PDF must NOT contain the red 'HALT' stamp (got approved packet, not halted)"
+    );
 }
