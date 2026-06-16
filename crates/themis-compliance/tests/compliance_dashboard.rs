@@ -211,9 +211,9 @@ fn halted_packet_still_populates_art_17_with_incident_metadata() {
         .iter()
         .find(|(n, _)| *n == "art_17_incident_reporting")
         .expect("Art 17 must be populated on HALT");
-    let v = &art_17.1;
-    assert_eq!(v["outcome"], "halt");
-    assert_eq!(v["incident_classification"], "fraud_suspected");
-    assert_eq!(v["reporting_window_hours"], 72);
-    assert_eq!(v["mock_recipient"], "NCA-ES");
+    let val = &art_17.1;
+    assert_eq!(val["outcome"], "halt");
+    assert_eq!(val["incident_classification"], "fraud_suspected");
+    assert_eq!(val["reporting_window_hours"], 72);
+    assert_eq!(val["mock_recipient"], "NCA-ES");
 }

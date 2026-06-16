@@ -125,12 +125,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model_id: model_id.to_string(),
     };
 
-    // Touch tsa so the unused-warning stays out of release builds
-    // (the orchestrator currently doesn't stamp packets, but
-    // the timestamp authority will be wired into EvidenceService
-    // in a follow-up sprint).
-    drop(tsa);
-
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     eprintln!("[themis-orchestrator] listening on {bind}");
