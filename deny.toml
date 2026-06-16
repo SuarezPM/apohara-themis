@@ -32,6 +32,12 @@ allow = [
     "Zlib",
     "OpenSSL",
     "MPL-2.0",
+    # CDLA-Permissive-2.0: Mozilla's CA root bundle (webpki-roots).
+    # Pulled in transitively by reqwest 0.12 + rustls-tls. The
+    # license covers the *data* (the root certs), not code; it
+    # is functionally a permissive redistribution license. US-08
+    # adds this dep.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 

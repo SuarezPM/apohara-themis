@@ -15,10 +15,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use themis_agents::llm::MockLlmProvider;
 use themis_evidence::rekor::MockRekorClient;
 use themis_evidence::timestamp::MockTimestampAuthority;
 use themis_orchestrator::http::{build_router, AppState};
+use themis_orchestrator::llm_backend::select_backend;
 use themis_orchestrator::orchestrator::Orchestrator;
 use themis_orchestrator::room::MockBandRoom;
 use themis_orchestrator::tenants::TenantRegistry;
@@ -44,10 +44,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // come from the compile-time baked seeds in themis-evidence.
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
 
-    // Mock LLM (the demo path). A real deployment would wire
-    // AnthropicBackend / OpenAiCompatBackend per the LlmBackend
-    // router; that's a follow-up requiring the secrets to be set.
-    let llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(MockLlmProvider::new("mock-demo"));
+    // LLM backend selection (US-08): try Featherless first when
+    // FEATHERLESS_API_KEY is set, otherwise fall back to the mock.
+    // The returned `model_id` drives AppState.model_id, which the
+    // frontend's provider badge reads from the SSE stream.
+    let (llm, model_id) = select_backend();
 
     // Build the 8 demo agents (extractor, po_matcher,
     // fraud_auditor, gaap_classifier, provenance_signer,
@@ -110,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reports: dashmap::DashMap::new(),
         packets: dashmap::DashMap::new(),
         sealed: dashmap::DashMap::new(),
-        model_id: llm.model_id().to_string(),
+        model_id: model_id.to_string(),
     };
 
     // Touch tsa so the unused-warning stays out of release builds

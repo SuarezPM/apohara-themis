@@ -34,6 +34,7 @@ pub fn version() -> &'static str {
 pub mod events;
 pub mod fixtures;
 pub mod http;
+pub mod llm_backend;
 pub mod orchestrator;
 pub mod packet;
 pub mod pdf;
