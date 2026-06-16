@@ -97,6 +97,7 @@
   position: sticky; top: 80px; z-index: var(--z-sticky);
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
   padding: var(--space-sm) var(--space-lg);
+  max-width: 1100px; margin: 0 auto;          /* align with .wrap lane (Pablo feedback re: centered alignment) */
   background: oklch(8% 0.01 260 / 92%);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
