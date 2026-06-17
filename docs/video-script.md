@@ -1,4 +1,12 @@
-# THEMIS Demo Video Script (v2 — post-Track-8..12)
+# THEMIS Demo Video Script (v3 — post-Track-8..22)
+
+> **Target**: 3 min, MP4 ≤5 min. **Recording tool**: OBS Studio
+> or ffmpeg + xdotool. **Output**: `demo/video.mp4` (≤50 MB).
+>
+> **v3 changes vs v2**: added sponsor segment (Featherless +
+> AIML API multi-model ensemble, env-var single-string switch),
+> judge segment (AIBOM, red team 0/30, WebAuthn HITL).
+> Re-record video capturing all 11 new artifacts.
 
 > **Target**: 3 min, MP4 ≤5 min. **Recording tool**: OBS Studio
 > or ffmpeg + xdotool. **Output**: `demo/video.mp4` (≤50 MB).
@@ -22,13 +30,16 @@ detected — judge: download the receipt to verify offline").
 > "Every year, enterprises lose billions to AP invoice
 > fraud. Most AI systems flag suspicious invoices but
 > can't prove it. THEMIS is different: 5 specialized
-> agents in a single 2.1 MB Rust binary, debating every
+> agents in a single 3.6 MB Rust binary, debating every
 > invoice in a Band chat room with real @mention routing.
-> When two agents disagree, the coordinator rules. When
-> fraud fires, a deterministic kill-switch halts the
-> process — and produces a cryptographically-signed,
-> offline-verifiable evidence packet that a regulator
-> can re-verify with no network."
+> Two agents use Anthropic's Sonnet 4.5 via the AIML API
+> gateway, five use Qwen models via Featherless AI's
+> open-source catalog. When two agents disagree, the
+> coordinator rules. When fraud fires, a deterministic
+> 5-condition kill-switch halts the process — and produces
+> a cryptographically-signed, offline-verifiable evidence
+> packet with a real RFC 3161 timestamp from FreeTSA
+> and a Rekor v2 transparency-log anchor."
 
 **B-roll**: HALT modal in the browser.
 
