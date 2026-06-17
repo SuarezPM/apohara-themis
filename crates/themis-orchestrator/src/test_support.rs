@@ -189,6 +189,8 @@ impl Agent for LlmStubAgent {
             max_tokens: 1024,
             temperature: 0.0,
             seed: Some(42),
+            response_schema: None,
+            response_schema_name: None,
         };
         let resp = self.llm.complete(req).await?;
         if let Some(counter) = &self.input_token_counter {
