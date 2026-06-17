@@ -49,6 +49,11 @@ pub mod circuit_breaker;
 pub mod events;
 pub mod featherless_openclaw;
 pub mod fixtures;
+/// Alert-fatigue detector — Story C-06 / G22 / AC6 (ASI09
+/// Human-Agent Trust Exploitation defense). Suspends HITL when
+/// the human approves more than 5 BAAAR HALT overrides in 60s;
+/// requires explicit re-auth before further approvals.
+pub mod human_guard;
 pub mod http;
 pub mod llm_backend;
 pub mod mcp_proxy;
@@ -60,6 +65,10 @@ pub mod rekor_backend;
 /// Pairs with `circuit_breaker` for defense-in-depth on the agent
 /// call loop.
 pub mod retry;
+/// Rogue-agent monitor — Story C-06 / G23 / AC6 (ASI10 Rogue
+/// Agents defense). Quarantines any agent that sends >10
+/// messages without `@mention`-ing another agent.
+pub mod rogue_monitor;
 pub mod room;
 /// AgentGuard subprocess sandbox (Story C-02). Owns the
 /// `apohara-agentguard` firewall integration — do NOT modify
