@@ -160,7 +160,8 @@ mod tests {
                 output_tokens: 30,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = DemoNarrator::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001")
             .with_upstream(dec(DecisionType::Extracted))
@@ -181,7 +182,8 @@ mod tests {
                 output_tokens: 30,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = DemoNarrator::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001").with_upstream(dec(DecisionType::Extracted));
         let d = agent.process(ctx).await.unwrap();
@@ -199,7 +201,8 @@ mod tests {
                 output_tokens: 0,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = DemoNarrator::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001").with_upstream(dec(DecisionType::Extracted));
         let err = agent.process(ctx).await.unwrap_err();

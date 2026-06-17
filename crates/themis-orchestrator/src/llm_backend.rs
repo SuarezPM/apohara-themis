@@ -143,9 +143,7 @@ pub fn select_backend_with(aimlapi_base_url: Option<String>) -> &'static str {
     // Auto: try AIML API first, then Featherless, then mock.
     let aiml_model = resolve_model("aimlapi");
     if AIMLAPIBackend::from_env_with_url(aiml_model, aiml_url).is_some() {
-        eprintln!(
-            "[themis-orchestrator] LLM: AIMLAPIBackend({aiml_model}) — live (auto-selected)"
-        );
+        eprintln!("[themis-orchestrator] LLM: AIMLAPIBackend({aiml_model}) — live (auto-selected)");
         return aiml_model;
     }
     let featherless_model = resolve_model("featherless");

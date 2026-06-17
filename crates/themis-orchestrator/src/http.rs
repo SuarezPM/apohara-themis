@@ -132,7 +132,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/packets/:packet_id/pdf", get(get_packet_pdf))
         .route("/packets/:packet_id/json", get(get_packet_json))
-        .route("/packets/:packet_id/override", axum::routing::post(post_human_override))
+        .route(
+            "/packets/:packet_id/override",
+            axum::routing::post(post_human_override),
+        )
         .route("/rooms/:room_id/transcript", get(get_room_transcript))
         .route("/aibom", get(get_aibom))
         .with_state(state)
@@ -269,8 +272,16 @@ async fn post_invoices(
     // Two agents argue, the coordinator rules, the run halts
     // (or approves with high confidence).
     if let (Some(fraud), Some(gaap)) = (
-        packet.packet.agent_decisions.iter().find(|d| d.agent_id == "fraud_auditor"),
-        packet.packet.agent_decisions.iter().find(|d| d.agent_id == "gaap_classifier"),
+        packet
+            .packet
+            .agent_decisions
+            .iter()
+            .find(|d| d.agent_id == "fraud_auditor"),
+        packet
+            .packet
+            .agent_decisions
+            .iter()
+            .find(|d| d.agent_id == "gaap_classifier"),
     ) {
         // Approximate the gaap_classifier's "risk" via
         // its confidence (the field is the model's
@@ -284,7 +295,10 @@ async fn post_invoices(
         let gaap_risk = 1.0 - gaap.confidence; // invert: low confidence = high uncertainty
         let delta = (fraud_risk - gaap_risk).abs();
         if delta > 0.3 {
-            let ruling = if matches!(packet.packet.bbaaar_outcome, themis_agents::baaar::Outcome::Approve) {
+            let ruling = if matches!(
+                packet.packet.bbaaar_outcome,
+                themis_agents::baaar::Outcome::Approve
+            ) {
                 "approve"
             } else {
                 "halt"
@@ -371,10 +385,7 @@ async fn get_room_transcript(
             )
                 .into_response();
         }
-        uuid::Uuid::new_v5(
-            &uuid::Uuid::NAMESPACE_OID,
-            room_id.as_bytes(),
-        )
+        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, room_id.as_bytes())
     };
     let room_uuid = RoomId(room_uuid);
     let last_n: usize = params

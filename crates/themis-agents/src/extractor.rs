@@ -218,7 +218,8 @@ mod tests {
                 output_tokens: 200,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = ExtractorAgent::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001")
             .with_raw_invoice(b"raw invoice bytes".to_vec(), "application/pdf");
@@ -250,7 +251,8 @@ mod tests {
                 output_tokens: 50,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = ExtractorAgent::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001")
             .with_raw_invoice(b"bytes".to_vec(), "application/pdf");
@@ -276,7 +278,8 @@ mod tests {
                 output_tokens: 50,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = ExtractorAgent::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001")
             .with_raw_invoice(b"bytes".to_vec(), "application/pdf");
@@ -302,7 +305,8 @@ mod tests {
                 output_tokens: 50,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = ExtractorAgent::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001")
             .with_raw_invoice(b"bytes".to_vec(), "application/pdf");
@@ -321,8 +325,9 @@ mod tests {
                     input_tokens: 100,
                     output_tokens: 200,
                     model_id: "mock".to_string(),
-                finish_reason: crate::llm::FinishReason::Stop,
-            }            )
+                    finish_reason: crate::llm::FinishReason::Stop,
+                },
+            )
             .with_rate_limit_after(0);
         let agent = ExtractorAgent::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001")
@@ -342,7 +347,8 @@ mod tests {
                 output_tokens: 200,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = ExtractorAgent::new(Arc::new(mock));
         let ctx = AgentContext::new("stark", "inv-001")
             .with_raw_invoice(b"bytes".to_vec(), "application/pdf");

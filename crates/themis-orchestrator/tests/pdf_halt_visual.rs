@@ -73,12 +73,7 @@ fn build_approve_packet() -> SignedPacket {
             }
         }),
     }];
-    let packet = EvidencePacket::new(
-        "wayne",
-        "inv-ok-001",
-        decisions,
-        Outcome::Approve,
-    );
+    let packet = EvidencePacket::new("wayne", "inv-ok-001", decisions, Outcome::Approve);
     SignedPacket::wrap(packet, "00".repeat(64), "11".repeat(32))
 }
 

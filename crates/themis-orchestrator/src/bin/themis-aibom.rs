@@ -112,13 +112,34 @@ fn build_aibom() -> Aibom {
     // (`placeholder-<crate>-<version>`) — a real build would
     // hash the crate's lib.rs or its compiled rlib.
     let crates = [
-        ("themis-orchestrator", "Multi-agent state machine + BAAAR gate + HTTP"),
-        ("themis-agents", "8 LLM agents (5 core + 3 shadow) + LlmBackend trait"),
-        ("themis-band-client", "Subprocess wrapper for the Band Python SDK"),
-        ("themis-compliance", "DORA / EU AI Act / NIST AI RMF / OWASP / ISO 42001 mappers"),
-        ("themis-compressor", "LLMLingua-2 port for shadow-agent prompt compression"),
-        ("themis-evidence", "Ed25519 + BLAKE3 + RFC 3161 + DSSE + sigstore-verify 0.8"),
-        ("themis-frontend", "Vanilla HTML/JS + EventSource SSE client"),
+        (
+            "themis-orchestrator",
+            "Multi-agent state machine + BAAAR gate + HTTP",
+        ),
+        (
+            "themis-agents",
+            "8 LLM agents (5 core + 3 shadow) + LlmBackend trait",
+        ),
+        (
+            "themis-band-client",
+            "Subprocess wrapper for the Band Python SDK",
+        ),
+        (
+            "themis-compliance",
+            "DORA / EU AI Act / NIST AI RMF / OWASP / ISO 42001 mappers",
+        ),
+        (
+            "themis-compressor",
+            "LLMLingua-2 port for shadow-agent prompt compression",
+        ),
+        (
+            "themis-evidence",
+            "Ed25519 + BLAKE3 + RFC 3161 + DSSE + sigstore-verify 0.8",
+        ),
+        (
+            "themis-frontend",
+            "Vanilla HTML/JS + EventSource SSE client",
+        ),
     ];
 
     let mut components = Vec::new();
@@ -130,18 +151,46 @@ fn build_aibom() -> Aibom {
             version: "0.1.0".to_string(),
             description: desc.to_string(),
             purl: Some(format!("pkg:cargo/{name}@0.1.0")),
-            hashes: vec![AibomHash { alg: "SHA-256".into(), content: hash }],
+            hashes: vec![AibomHash {
+                alg: "SHA-256".into(),
+                content: hash,
+            }],
             properties: vec![],
         });
     }
 
     // 6 model components (the canonical multi-model dispatch).
     let models = [
-        ("anthropic/claude-sonnet-4.5", "AIML API gateway", "closed", "FraudAuditor"),
-        ("Qwen/Qwen2.5-Coder-32B-Instruct", "Featherless", "open-source", "Extractor"),
-        ("Qwen/Qwen3-32B", "Featherless", "open-source", "GaapClassifier"),
-        ("Qwen/Qwen3-Coder-30B-A3B-Instruct", "Featherless", "open-source", "AuditWatchdog + RegressionTester"),
-        ("Qwen/Qwen2.5-1.5B-Instruct", "Featherless", "open-source", "DemoNarrator"),
+        (
+            "anthropic/claude-sonnet-4.5",
+            "AIML API gateway",
+            "closed",
+            "FraudAuditor",
+        ),
+        (
+            "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "Featherless",
+            "open-source",
+            "Extractor",
+        ),
+        (
+            "Qwen/Qwen3-32B",
+            "Featherless",
+            "open-source",
+            "GaapClassifier",
+        ),
+        (
+            "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+            "Featherless",
+            "open-source",
+            "AuditWatchdog + RegressionTester",
+        ),
+        (
+            "Qwen/Qwen2.5-1.5B-Instruct",
+            "Featherless",
+            "open-source",
+            "DemoNarrator",
+        ),
     ];
     for (model_id, provider, lineage, role) in models {
         let hash = sha256_hex(format!("placeholder-model-{model_id}").as_bytes());
@@ -151,21 +200,53 @@ fn build_aibom() -> Aibom {
             version: "latest".to_string(),
             description: format!("{provider} ({lineage}); routed to {role}"),
             purl: Some(format!("https://{provider}.com/models/{model_id}")),
-            hashes: vec![AibomHash { alg: "SHA-256".into(), content: hash }],
+            hashes: vec![AibomHash {
+                alg: "SHA-256".into(),
+                content: hash,
+            }],
             properties: vec![
-                AibomProperty { name: "provider".into(), value: provider.into() },
-                AibomProperty { name: "lineage".into(), value: lineage.into() },
-                AibomProperty { name: "role".into(), value: role.into() },
+                AibomProperty {
+                    name: "provider".into(),
+                    value: provider.into(),
+                },
+                AibomProperty {
+                    name: "lineage".into(),
+                    value: lineage.into(),
+                },
+                AibomProperty {
+                    name: "role".into(),
+                    value: role.into(),
+                },
             ],
         });
     }
 
     // 4 tool components (external protocols).
     let tools = [
-        ("Featherless AI", "30,000+ open-source model serverless inference", "https://featherless.ai", "openai-compat"),
-        ("AI/ML API", "500+ model gateway (AIML API)", "https://api.aimlapi.com", "openai-compat"),
-        ("FreeTSA", "Public RFC 3161 timestamping service", "https://freetsa.org", "tsa"),
-        ("Sigstore Rekor v2", "DSSE transparency log", "https://rekor.sigstore.dev", "dsse"),
+        (
+            "Featherless AI",
+            "30,000+ open-source model serverless inference",
+            "https://featherless.ai",
+            "openai-compat",
+        ),
+        (
+            "AI/ML API",
+            "500+ model gateway (AIML API)",
+            "https://api.aimlapi.com",
+            "openai-compat",
+        ),
+        (
+            "FreeTSA",
+            "Public RFC 3161 timestamping service",
+            "https://freetsa.org",
+            "tsa",
+        ),
+        (
+            "Sigstore Rekor v2",
+            "DSSE transparency log",
+            "https://rekor.sigstore.dev",
+            "dsse",
+        ),
     ];
     for (name, desc, url, protocol) in tools {
         let hash = sha256_hex(format!("placeholder-tool-{name}").as_bytes());
@@ -175,22 +256,53 @@ fn build_aibom() -> Aibom {
             version: "2026".to_string(),
             description: desc.to_string(),
             purl: Some(url.to_string()),
-            hashes: vec![AibomHash { alg: "SHA-256".into(), content: hash }],
-            properties: vec![AibomProperty { name: "protocol".into(), value: protocol.into() }],
+            hashes: vec![AibomHash {
+                alg: "SHA-256".into(),
+                content: hash,
+            }],
+            properties: vec![AibomProperty {
+                name: "protocol".into(),
+                value: protocol.into(),
+            }],
         });
     }
 
     // Top-level properties = the THEMIS evidence claims a
     // regulator or auditor can verify at runtime.
     let properties = vec![
-        AibomProperty { name: "baaar_halt_deterministic".into(), value: "10/10".into() },
-        AibomProperty { name: "evidence_packet_frameworks".into(), value: "DORA + EU AI Act + NIST AI RMF + OWASP + ISO 42001".into() },
-        AibomProperty { name: "evidence_packet_fields".into(), value: "30/30 (DORA 3 + EU AI Act 9 + NIST 4 + OWASP 10 + ISO 4)".into() },
-        AibomProperty { name: "dsse_envelope".into(), value: "RFC 8785 JCS, IETF in-toto DSSE, application/vnd.apohara.themis.entry+json".into() },
-        AibomProperty { name: "rfc3161_timestamp".into(), value: "FreeTSA freetsa.org, real DER preserved".into() },
-        AibomProperty { name: "rekor_anchor".into(), value: "sigstore-verify 0.8, embedded production trust root".into() },
-        AibomProperty { name: "agent_diversity".into(), value: "3 lineages (Anthropic + Qwen + Featherless open-source)".into() },
-        AibomProperty { name: "adversarial_robustness".into(), value: "BAAAR 5-condition gate + DSSE schema + response_format:json_schema".into() },
+        AibomProperty {
+            name: "baaar_halt_deterministic".into(),
+            value: "10/10".into(),
+        },
+        AibomProperty {
+            name: "evidence_packet_frameworks".into(),
+            value: "DORA + EU AI Act + NIST AI RMF + OWASP + ISO 42001".into(),
+        },
+        AibomProperty {
+            name: "evidence_packet_fields".into(),
+            value: "30/30 (DORA 3 + EU AI Act 9 + NIST 4 + OWASP 10 + ISO 4)".into(),
+        },
+        AibomProperty {
+            name: "dsse_envelope".into(),
+            value: "RFC 8785 JCS, IETF in-toto DSSE, application/vnd.apohara.themis.entry+json"
+                .into(),
+        },
+        AibomProperty {
+            name: "rfc3161_timestamp".into(),
+            value: "FreeTSA freetsa.org, real DER preserved".into(),
+        },
+        AibomProperty {
+            name: "rekor_anchor".into(),
+            value: "sigstore-verify 0.8, embedded production trust root".into(),
+        },
+        AibomProperty {
+            name: "agent_diversity".into(),
+            value: "3 lineages (Anthropic + Qwen + Featherless open-source)".into(),
+        },
+        AibomProperty {
+            name: "adversarial_robustness".into(),
+            value: "BAAAR 5-condition gate + DSSE schema + response_format:json_schema".into(),
+        },
     ];
 
     Aibom {

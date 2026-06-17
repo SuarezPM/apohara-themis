@@ -416,7 +416,11 @@ pub fn render_packet_pdf(packet: &SignedPacket) -> Result<Vec<u8>, PdfError> {
     const FRAMEWORK_SECTIONS: &[(&str, &[&str])] = &[
         (
             "DORA (Reg 2022/2554) - Art. 9/10/17:",
-            &["art_9_ict_risk_management", "art_10_incident_detection", "art_17_incident_reporting"],
+            &[
+                "art_9_ict_risk_management",
+                "art_10_incident_detection",
+                "art_17_incident_reporting",
+            ],
         ),
         (
             "EU AI Act (Reg 2024/1689) - Art. 12 + Art. 26:",
@@ -517,7 +521,14 @@ pub fn render_packet_pdf(packet: &SignedPacket) -> Result<Vec<u8>, PdfError> {
         );
         write_line(&layer2, &line1, 20.0, y2, 9.0, true);
         y2 -= line_h2;
-        write_line(&layer2, &format!("     {}", reasoning_short), 20.0, y2, 8.0, false);
+        write_line(
+            &layer2,
+            &format!("     {}", reasoning_short),
+            20.0,
+            y2,
+            8.0,
+            false,
+        );
         y2 -= line_h2;
         // Hard cap at the page footer; the spec requires all 8
         // agents in the trace, so we keep going even past y < 30.
@@ -616,8 +627,7 @@ fn build_condition_matrix(decisions: &[AgentDecision]) -> Vec<(&'static str, Str
     // Best-effort: find the FraudAuditor's assessment. The auditor
     // emits `payload.assessment.{risk_score,...}`; older agents may
     // emit the fields flat at the top level. Accept both shapes.
-    let (risk_score, coherence_score, debate_rounds, has_secret) =
-        extract_assessment(decisions);
+    let (risk_score, coherence_score, debate_rounds, has_secret) = extract_assessment(decisions);
 
     // explicit_halt is the one field we don't have a typed value
     // for — read it from the same payload shape, accepting either
@@ -627,11 +637,7 @@ fn build_condition_matrix(decisions: &[AgentDecision]) -> Vec<(&'static str, Str
             .get("assessment")
             .and_then(|a| a.get("explicit_halt"))
             .and_then(|v| v.as_bool())
-            .or_else(|| {
-                d.payload
-                    .get("explicit_halt")
-                    .and_then(|v| v.as_bool())
-            })
+            .or_else(|| d.payload.get("explicit_halt").and_then(|v| v.as_bool()))
             .unwrap_or(false)
     });
 
@@ -640,7 +646,9 @@ fn build_condition_matrix(decisions: &[AgentDecision]) -> Vec<(&'static str, Str
             format!(
                 "[{}] risk_score > 0.85  score={}  {}",
                 if v { "X" } else { " " },
-                risk_score.map(|x| format!("{x:.2}")).unwrap_or_else(|| "n/a".into()),
+                risk_score
+                    .map(|x| format!("{x:.2}"))
+                    .unwrap_or_else(|| "n/a".into()),
                 if v { "FIRED" } else { "pass" }
             )
         }),
@@ -665,7 +673,9 @@ fn build_condition_matrix(decisions: &[AgentDecision]) -> Vec<(&'static str, Str
             format!(
                 "[{}] debate_rounds >= 5  rounds={}  {}",
                 if v { "X" } else { " " },
-                debate_rounds.map(|x| x.to_string()).unwrap_or_else(|| "n/a".into()),
+                debate_rounds
+                    .map(|x| x.to_string())
+                    .unwrap_or_else(|| "n/a".into()),
                 if v { "FIRED" } else { "pass" }
             )
         }),
@@ -711,12 +721,18 @@ fn extract_assessment(
     };
 
     let inner = payload.get("assessment").unwrap_or(payload);
-    let risk_score = inner.get("risk_score").and_then(|v| v.as_f64()).map(|v| v as f32);
+    let risk_score = inner
+        .get("risk_score")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32);
     let coherence_score = inner
         .get("coherence_score")
         .and_then(|v| v.as_f64())
         .map(|v| v as f32);
-    let debate_rounds = inner.get("debate_rounds").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let debate_rounds = inner
+        .get("debate_rounds")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
     let has_secret = inner
         .get("findings")
         .and_then(|v| v.as_array())

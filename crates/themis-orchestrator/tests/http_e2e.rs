@@ -44,8 +44,9 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
                     input_tokens: 256,
                     output_tokens: 128,
                     model_id: "e2e-mock".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-                        })
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_response(
                 "assess_fraud_risk",
                 LlmResponse {
@@ -74,17 +75,19 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
                     input_tokens: 256,
                     output_tokens: 64,
                     model_id: "e2e-mock".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-                        })
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_default(LlmResponse {
                 text: serde_json::json!({"stub":"ok"}).to_string(),
                 input_tokens: 64,
                 output_tokens: 32,
                 model_id: "e2e-mock".to_string(),
-            finish_reason: themis_agents::llm::FinishReason::Stop,
+                finish_reason: themis_agents::llm::FinishReason::Stop,
             }),
     );
-    let agents = themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
+    let agents =
+        themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let orch = Orchestrator::new_with_rekor(
@@ -451,304 +454,303 @@ async fn e2e_halting_fixtures_produce_halted_packet() {
     }
 }
 
-    /// Body larger than the 4 MiB cap must be rejected with 413.
-    /// This is the demo's DoS protection (C-4).
-    #[tokio::test]
-    async fn post_invoices_rejects_5mb_body_with_413() {
-        let f = load_fixture("wayne-002.json");
-        let app = router_for(&f);
-        // 5 MiB of base64-padding payload — well over the 4 MiB cap.
-        let big_b64 = "A".repeat(5 * 1024 * 1024);
-        let body = format!(
-            r#"{{"tenant_id":"wayne","invoice_id":"big","raw_b64":"{big_b64}"}}"#
-        );
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/invoices")
-                    .header("content-type", "application/json")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        // 413 = Payload Too Large. The RequestBodyLimitLayer
-        // returns this when the body exceeds the cap.
-        assert_eq!(
-            resp.status(),
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "5 MiB body should be rejected with 413"
-        );
-    }
-
-    /// Body at 100 KiB should succeed (well under the 4 MiB cap).
-    /// The body limit applies to the wire-level request body.
-    /// Verifying the boundary at 4 MiB exactly is fragile because
-    /// axum's body framing adds bytes; this test verifies the
-    /// happy path with a comfortably small body.
-    #[tokio::test]
-    async fn post_invoices_accepts_small_body() {
-        let f = load_fixture("wayne-002.json");
-        let app = router_for(&f);
-        // 100 KiB body — well under 4 MiB, exercises the happy path.
-        let big_b64 = "A".repeat(100 * 1024);
-        let body = format!(
-            r#"{{"tenant_id":"wayne","invoice_id":"small","raw_b64":"{big_b64}"}}"#
-        );
-        assert!(body.len() < 4 * 1024 * 1024);
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/invoices")
-                    .header("content-type", "application/json")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    /// The SSE stream must carry a `provider_active` event with a
-    /// `model_id` field (US-03: visible signal of which LLM the
-    /// demo is hitting). We open `/events`, POST an invoice to seed
-    /// the bus, then read events until we see the `provider_active`
-    /// type and assert `model_id` is a non-empty string. We do this
-    /// via the EventBus (not the raw HTTP stream) because the SSE
-    /// wire format requires keeping the response open across the
-    /// POST, which complicates oneshot() tests. The bus is the same
-    /// source the SSE handler serializes from.
-    #[tokio::test]
-    async fn e2e_provider_active_event_includes_model_id() {
-        use themis_orchestrator::events::Event;
-        // We need the AppState to subscribe to the bus BEFORE the
-        // POST fires (so the broadcast is delivered). Rebuild the
-        // state with a captured bus for this test only.
-        let f = load_fixture("wayne-002.json");
-        let mock_llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(
-            MockLlmProvider::new("e2e-sse-mock")
-                .with_response(
-                    &f.invoice_id,
-                    LlmResponse {
-                        text: serde_json::to_string(&f.extracted).unwrap(),
-                        input_tokens: 256,
-                        output_tokens: 128,
-                        model_id: "e2e-sse-mock".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-            }                )
-                .with_response(
-                    "assess_fraud_risk",
-                    LlmResponse {
-                        text: serde_json::json!({
-                            "assessment": {
-                                "risk_score": f.fraud_assessment.risk_score,
-                                "findings": [{
-                                    "kind": "other",
-                                    "value": "fixture",
-                                    "description": f.halt_reason_human.clone().unwrap_or_default(),
-                                }],
-                                "coherence_score": f.fraud_assessment.coherence_score,
-                                "debate_rounds": f.fraud_assessment.debate_rounds,
-                                "explicit_halt": f.fraud_assessment.explicit_halt,
-                            },
-                            "outcome": themis_orchestrator::test_support::expected_outcome_string(&f),
-                        })
-                        .to_string(),
-                        input_tokens: 256,
-                        output_tokens: 64,
-                        model_id: "e2e-sse-mock".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-            }                )
-                .with_default(LlmResponse {
-                    text: serde_json::json!({"stub":"ok"}).to_string(),
-                    input_tokens: 64,
-                    output_tokens: 32,
-                    model_id: "e2e-sse-mock".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-                }),
-        );
-        let agents = themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
-        let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
-        let tenants = Arc::new(TenantRegistry::with_default_tenants());
-        let orch = Orchestrator::new_with_rekor(
-            rooms,
-            agents,
-            tenants,
-            Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
-        );
-        let bus = Arc::new(themis_orchestrator::events::EventBus::new(1024));
-        let mut rx = bus.subscribe();
-        let state = AppState {
-            orchestrator: Arc::new(tokio::sync::Mutex::new(orch)),
-            event_bus: bus,
-            compliance: Arc::new(themis_compliance::service::ComplianceService::new()),
-            reports: dashmap::DashMap::new(),
-            packets: dashmap::DashMap::new(),
-            sealed: dashmap::DashMap::new(),
-            model_id: mock_llm.model_id().to_string(),
-            band_room: None,
-        };
-        let app = build_router(state);
-
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/invoices")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"tenant_id":"wayne","invoice_id":"sse-001","raw_b64":""}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        // Also assert the JSON response carries the same model_id
-        // (so the frontend can render the badge from the POST body
-        // alone, without depending on the SSE reconnection timing).
-        let body = to_bytes(resp.into_body(), MAX_BODY).await.unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(
-            v["model_id"].as_str(),
-            Some("e2e-sse-mock"),
-            "POST /invoices response should include model_id"
-        );
-
-        // Drain the bus; expect at least one ProviderActive event.
-        // This is the same data the SSE handler serializes to the
-        // wire (http.rs: serde_json::to_string(&event)).
-        let mut provider_active = None;
-        for _ in 0..16 {
-            match rx.try_recv() {
-                Ok(Event::ProviderActive { model_id, .. }) => {
-                    provider_active = Some(model_id);
-                    break;
-                }
-                Ok(_) => continue,
-                Err(_) => break,
-            }
-        }
-        let model_id = provider_active.expect("expected ProviderActive event on bus");
-        assert_eq!(model_id, "e2e-sse-mock");
-
-        // Also serialize to JSON (mirroring what the SSE handler
-        // ships to the browser) and assert the wire shape carries
-        // the model_id key under the provider_active type tag.
-        let wire = serde_json::to_value(&Event::ProviderActive {
-            run_id: uuid::Uuid::new_v4(),
-            model_id: "e2e-sse-mock".to_string(),
-        })
+/// Body larger than the 4 MiB cap must be rejected with 413.
+/// This is the demo's DoS protection (C-4).
+#[tokio::test]
+async fn post_invoices_rejects_5mb_body_with_413() {
+    let f = load_fixture("wayne-002.json");
+    let app = router_for(&f);
+    // 5 MiB of base64-padding payload — well over the 4 MiB cap.
+    let big_b64 = "A".repeat(5 * 1024 * 1024);
+    let body = format!(r#"{{"tenant_id":"wayne","invoice_id":"big","raw_b64":"{big_b64}"}}"#);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/invoices")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
         .unwrap();
-        assert_eq!(wire["type"], "provider_active");
-        assert_eq!(wire["model_id"], "e2e-sse-mock");
-    }
+    // 413 = Payload Too Large. The RequestBodyLimitLayer
+    // returns this when the body exceeds the cap.
+    assert_eq!(
+        resp.status(),
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "5 MiB body should be rejected with 413"
+    );
+}
 
-    // --- US-08 env-var fallback integration tests ---
-    //
-    // The binary's startup path calls `themis_orchestrator::llm_backend::select_backend()`,
-    // which returns `(Arc<dyn LlmBackend>, &'static str model_id)`. The
-    // contract is: if `FEATHERLESS_API_KEY` is unset or empty, fall
-    // back to the mock; if set, use Featherless. Invalid keys are
-    // treated the same as missing (auth surfaces at request time,
-    // not startup time, so the demo can boot with a typo).
-    //
-    // The tests below run `select_backend()` directly and assert on
-    // the returned model_id. They do NOT construct AppState — the
-    // existing `router_for(...)` helper already covers the
-    // AppState+POST path with the mock backend.
+/// Body at 100 KiB should succeed (well under the 4 MiB cap).
+/// The body limit applies to the wire-level request body.
+/// Verifying the boundary at 4 MiB exactly is fragile because
+/// axum's body framing adds bytes; this test verifies the
+/// happy path with a comfortably small body.
+#[tokio::test]
+async fn post_invoices_accepts_small_body() {
+    let f = load_fixture("wayne-002.json");
+    let app = router_for(&f);
+    // 100 KiB body — well under 4 MiB, exercises the happy path.
+    let big_b64 = "A".repeat(100 * 1024);
+    let body = format!(r#"{{"tenant_id":"wayne","invoice_id":"small","raw_b64":"{big_b64}"}}"#);
+    assert!(body.len() < 4 * 1024 * 1024);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/invoices")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
 
-    #[test]
-    fn llm_backend_selection_falls_back_to_mock_without_env() {
-        // SAFETY: env mutation. The test runs in the same process
-        // as the other http_e2e tests, which do NOT touch
-        // FEATHERLESS_API_KEY. After this test, we remove the
-        // var again so subsequent tests see the unset state.
-        unsafe {
-            std::env::remove_var("FEATHERLESS_API_KEY");
-        }
-        let model_id = themis_orchestrator::llm_backend::select_backend();
-        assert_eq!(
-            model_id, "mock-demo",
-            "select_backend should fall back to mock when FEATHERLESS_API_KEY is unset"
-        );
-    }
-
-    #[test]
-    fn llm_backend_selection_falls_back_to_mock_with_empty_env() {
-        unsafe {
-            std::env::set_var("FEATHERLESS_API_KEY", "");
-        }
-        let model_id = themis_orchestrator::llm_backend::select_backend();
-        unsafe {
-            std::env::remove_var("FEATHERLESS_API_KEY");
-        }
-        assert_eq!(
-            model_id, "mock-demo",
-            "empty FEATHERLESS_API_KEY should fall back to mock"
-        );
-    }
-
-    #[test]
-    fn llm_backend_selection_uses_featherless_with_dummy_key() {
-        // A "dummy" key (clearly invalid) is still TREATED AS SET by
-        // the boot-time selection — the boot can't make a network
-        // call to validate the key (it would block startup). Real
-        // auth failures surface on the first LLM call, not on
-        // startup. The benefit: the binary boots, the frontend
-        // shows the live badge, and the request fails loudly with
-        // a 401 — better than a crash loop.
-        unsafe {
-            std::env::set_var("FEATHERLESS_API_KEY", "sk-dummy-invalid-key-for-test");
-        }
-        let model_id = themis_orchestrator::llm_backend::select_backend();
-        unsafe {
-            std::env::remove_var("FEATHERLESS_API_KEY");
-        }
-        assert_eq!(
-            model_id,
-            themis_orchestrator::llm_backend::FEATHERLESS_MODEL,
-            "any non-empty FEATHERLESS_API_KEY should select Featherless at boot"
-        );
-    }
-
-    #[tokio::test]
-    async fn e2e_post_invoices_works_with_mock_fallback_path() {
-        // The full e2e flow with the env unset. The fixture's
-        // MockLlmProvider in `router_for` handles the LLM stub;
-        // this test exercises the same path the binary takes
-        // when `FEATHERLESS_API_KEY` is unset (mock + canned
-        // responses). The earlier `e2e_post_invoices_returns_packet_id_and_compliance`
-        // covers the 200 + JSON body; this one asserts the
-        // model_id field in the response is present (which the
-        // frontend uses for the provider badge) and that the
-        // SSE/ProviderActive event carries the same value.
-        unsafe {
-            std::env::remove_var("FEATHERLESS_API_KEY");
-        }
-        let app = router_for(&load_fixture("wayne-002.json"));
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/invoices")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"tenant_id":"wayne","invoice_id":"us08-fallback-001","raw_b64":""}"#,
-                    ))
-                    .unwrap(),
+/// The SSE stream must carry a `provider_active` event with a
+/// `model_id` field (US-03: visible signal of which LLM the
+/// demo is hitting). We open `/events`, POST an invoice to seed
+/// the bus, then read events until we see the `provider_active`
+/// type and assert `model_id` is a non-empty string. We do this
+/// via the EventBus (not the raw HTTP stream) because the SSE
+/// wire format requires keeping the response open across the
+/// POST, which complicates oneshot() tests. The bus is the same
+/// source the SSE handler serializes from.
+#[tokio::test]
+async fn e2e_provider_active_event_includes_model_id() {
+    use themis_orchestrator::events::Event;
+    // We need the AppState to subscribe to the bus BEFORE the
+    // POST fires (so the broadcast is delivered). Rebuild the
+    // state with a captured bus for this test only.
+    let f = load_fixture("wayne-002.json");
+    let mock_llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(
+        MockLlmProvider::new("e2e-sse-mock")
+            .with_response(
+                &f.invoice_id,
+                LlmResponse {
+                    text: serde_json::to_string(&f.extracted).unwrap(),
+                    input_tokens: 256,
+                    output_tokens: 128,
+                    model_id: "e2e-sse-mock".to_string(),
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
             )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body = to_bytes(resp.into_body(), MAX_BODY).await.unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        // The router_for helper builds AppState with
-        // mock_llm.model_id() = "e2e-mock". When the env is
-        // unset, the real binary would show "mock-demo"; here
-        // we're testing the routing layer, not the bin.
-        let model_id = v["model_id"].as_str().expect("model_id in response");
-        assert_eq!(model_id, "e2e-mock");
+            .with_response(
+                "assess_fraud_risk",
+                LlmResponse {
+                    text: serde_json::json!({
+                        "assessment": {
+                            "risk_score": f.fraud_assessment.risk_score,
+                            "findings": [{
+                                "kind": "other",
+                                "value": "fixture",
+                                "description": f.halt_reason_human.clone().unwrap_or_default(),
+                            }],
+                            "coherence_score": f.fraud_assessment.coherence_score,
+                            "debate_rounds": f.fraud_assessment.debate_rounds,
+                            "explicit_halt": f.fraud_assessment.explicit_halt,
+                        },
+                        "outcome": themis_orchestrator::test_support::expected_outcome_string(&f),
+                    })
+                    .to_string(),
+                    input_tokens: 256,
+                    output_tokens: 64,
+                    model_id: "e2e-sse-mock".to_string(),
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
+            .with_default(LlmResponse {
+                text: serde_json::json!({"stub":"ok"}).to_string(),
+                input_tokens: 64,
+                output_tokens: 32,
+                model_id: "e2e-sse-mock".to_string(),
+                finish_reason: themis_agents::llm::FinishReason::Stop,
+            }),
+    );
+    let agents =
+        themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
+    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
+    let tenants = Arc::new(TenantRegistry::with_default_tenants());
+    let orch = Orchestrator::new_with_rekor(
+        rooms,
+        agents,
+        tenants,
+        Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
+    );
+    let bus = Arc::new(themis_orchestrator::events::EventBus::new(1024));
+    let mut rx = bus.subscribe();
+    let state = AppState {
+        orchestrator: Arc::new(tokio::sync::Mutex::new(orch)),
+        event_bus: bus,
+        compliance: Arc::new(themis_compliance::service::ComplianceService::new()),
+        reports: dashmap::DashMap::new(),
+        packets: dashmap::DashMap::new(),
+        sealed: dashmap::DashMap::new(),
+        model_id: mock_llm.model_id().to_string(),
+        band_room: None,
+    };
+    let app = build_router(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/invoices")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"tenant_id":"wayne","invoice_id":"sse-001","raw_b64":""}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Also assert the JSON response carries the same model_id
+    // (so the frontend can render the badge from the POST body
+    // alone, without depending on the SSE reconnection timing).
+    let body = to_bytes(resp.into_body(), MAX_BODY).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        v["model_id"].as_str(),
+        Some("e2e-sse-mock"),
+        "POST /invoices response should include model_id"
+    );
+
+    // Drain the bus; expect at least one ProviderActive event.
+    // This is the same data the SSE handler serializes to the
+    // wire (http.rs: serde_json::to_string(&event)).
+    let mut provider_active = None;
+    for _ in 0..16 {
+        match rx.try_recv() {
+            Ok(Event::ProviderActive { model_id, .. }) => {
+                provider_active = Some(model_id);
+                break;
+            }
+            Ok(_) => continue,
+            Err(_) => break,
+        }
     }
+    let model_id = provider_active.expect("expected ProviderActive event on bus");
+    assert_eq!(model_id, "e2e-sse-mock");
+
+    // Also serialize to JSON (mirroring what the SSE handler
+    // ships to the browser) and assert the wire shape carries
+    // the model_id key under the provider_active type tag.
+    let wire = serde_json::to_value(&Event::ProviderActive {
+        run_id: uuid::Uuid::new_v4(),
+        model_id: "e2e-sse-mock".to_string(),
+    })
+    .unwrap();
+    assert_eq!(wire["type"], "provider_active");
+    assert_eq!(wire["model_id"], "e2e-sse-mock");
+}
+
+// --- US-08 env-var fallback integration tests ---
+//
+// The binary's startup path calls `themis_orchestrator::llm_backend::select_backend()`,
+// which returns `(Arc<dyn LlmBackend>, &'static str model_id)`. The
+// contract is: if `FEATHERLESS_API_KEY` is unset or empty, fall
+// back to the mock; if set, use Featherless. Invalid keys are
+// treated the same as missing (auth surfaces at request time,
+// not startup time, so the demo can boot with a typo).
+//
+// The tests below run `select_backend()` directly and assert on
+// the returned model_id. They do NOT construct AppState — the
+// existing `router_for(...)` helper already covers the
+// AppState+POST path with the mock backend.
+
+#[test]
+fn llm_backend_selection_falls_back_to_mock_without_env() {
+    // SAFETY: env mutation. The test runs in the same process
+    // as the other http_e2e tests, which do NOT touch
+    // FEATHERLESS_API_KEY. After this test, we remove the
+    // var again so subsequent tests see the unset state.
+    unsafe {
+        std::env::remove_var("FEATHERLESS_API_KEY");
+    }
+    let model_id = themis_orchestrator::llm_backend::select_backend();
+    assert_eq!(
+        model_id, "mock-demo",
+        "select_backend should fall back to mock when FEATHERLESS_API_KEY is unset"
+    );
+}
+
+#[test]
+fn llm_backend_selection_falls_back_to_mock_with_empty_env() {
+    unsafe {
+        std::env::set_var("FEATHERLESS_API_KEY", "");
+    }
+    let model_id = themis_orchestrator::llm_backend::select_backend();
+    unsafe {
+        std::env::remove_var("FEATHERLESS_API_KEY");
+    }
+    assert_eq!(
+        model_id, "mock-demo",
+        "empty FEATHERLESS_API_KEY should fall back to mock"
+    );
+}
+
+#[test]
+fn llm_backend_selection_uses_featherless_with_dummy_key() {
+    // A "dummy" key (clearly invalid) is still TREATED AS SET by
+    // the boot-time selection — the boot can't make a network
+    // call to validate the key (it would block startup). Real
+    // auth failures surface on the first LLM call, not on
+    // startup. The benefit: the binary boots, the frontend
+    // shows the live badge, and the request fails loudly with
+    // a 401 — better than a crash loop.
+    unsafe {
+        std::env::set_var("FEATHERLESS_API_KEY", "sk-dummy-invalid-key-for-test");
+    }
+    let model_id = themis_orchestrator::llm_backend::select_backend();
+    unsafe {
+        std::env::remove_var("FEATHERLESS_API_KEY");
+    }
+    assert_eq!(
+        model_id,
+        themis_orchestrator::llm_backend::FEATHERLESS_MODEL,
+        "any non-empty FEATHERLESS_API_KEY should select Featherless at boot"
+    );
+}
+
+#[tokio::test]
+async fn e2e_post_invoices_works_with_mock_fallback_path() {
+    // The full e2e flow with the env unset. The fixture's
+    // MockLlmProvider in `router_for` handles the LLM stub;
+    // this test exercises the same path the binary takes
+    // when `FEATHERLESS_API_KEY` is unset (mock + canned
+    // responses). The earlier `e2e_post_invoices_returns_packet_id_and_compliance`
+    // covers the 200 + JSON body; this one asserts the
+    // model_id field in the response is present (which the
+    // frontend uses for the provider badge) and that the
+    // SSE/ProviderActive event carries the same value.
+    unsafe {
+        std::env::remove_var("FEATHERLESS_API_KEY");
+    }
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/invoices")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"tenant_id":"wayne","invoice_id":"us08-fallback-001","raw_b64":""}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), MAX_BODY).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    // The router_for helper builds AppState with
+    // mock_llm.model_id() = "e2e-mock". When the env is
+    // unset, the real binary would show "mock-demo"; here
+    // we're testing the routing layer, not the bin.
+    let model_id = v["model_id"].as_str().expect("model_id in response");
+    assert_eq!(model_id, "e2e-mock");
+}

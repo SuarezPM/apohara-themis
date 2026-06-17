@@ -72,7 +72,8 @@ fn themis_verify_binary_rejects_tampered_packet() {
         .build()
         .unwrap();
     let mut svc = EvidenceService::from_seed("stark", [1u8; 32], tsa());
-    let mut packet: SealedPacket = rt.block_on(async { svc.seal("inv-001", "x", None).await.unwrap() });
+    let mut packet: SealedPacket =
+        rt.block_on(async { svc.seal("inv-001", "x", None).await.unwrap() });
     // Tamper the payload.
     packet.payload_canonical_json = b"\"TAMPERED\"".to_vec();
 

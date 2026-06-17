@@ -62,16 +62,10 @@ fn build_label(tenant: &str, raw: &RawFixture) -> String {
     let verdict = if raw.expected_verdict == "APPROVED" {
         "APPROVED".to_string()
     } else {
-        let reason = raw
-            .expected_halt_reason
-            .replace('_', " ")
-            .to_uppercase();
+        let reason = raw.expected_halt_reason.replace('_', " ").to_uppercase();
         format!("HALT · {reason}")
     };
-    format!(
-        "{tenant} · {invoice} · {verdict}",
-        invoice = raw.invoice_id,
-    )
+    format!("{tenant} · {invoice} · {verdict}", invoice = raw.invoice_id,)
 }
 
 /// The 5 demo invoice fixtures embedded at compile time.
@@ -164,13 +158,13 @@ mod tests {
 
         // Every fixture has a non-empty tenant_id, invoice_id, and raw_b64.
         for f in &fixtures {
-            assert!(!f.tenant_id.is_empty(), "empty tenant_id in {}", f.invoice_id);
-            assert!(!f.invoice_id.is_empty(), "empty invoice_id");
             assert!(
-                !f.raw_b64.is_empty(),
-                "empty raw_b64 for {}",
+                !f.tenant_id.is_empty(),
+                "empty tenant_id in {}",
                 f.invoice_id
             );
+            assert!(!f.invoice_id.is_empty(), "empty invoice_id");
+            assert!(!f.raw_b64.is_empty(), "empty raw_b64 for {}", f.invoice_id);
             // raw_b64 must decode to the fixture JSON (round-trip integrity).
             use base64::Engine;
             let bytes = base64::engine::general_purpose::STANDARD

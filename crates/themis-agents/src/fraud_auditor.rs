@@ -222,7 +222,8 @@ mod tests {
                 output_tokens: 100,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = FraudAuditor::new(Arc::new(mock));
         let d = agent
             .process(AgentContext::new("stark", "inv-001"))
@@ -243,7 +244,8 @@ mod tests {
                 output_tokens: 100,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = FraudAuditor::new(Arc::new(mock));
         let d = agent
             .process(AgentContext::new("stark", "inv-001"))
@@ -263,7 +265,8 @@ mod tests {
                 output_tokens: 100,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = FraudAuditor::new(Arc::new(mock));
         let d = agent
             .process(AgentContext::new("stark", "inv-001"))
@@ -283,7 +286,8 @@ mod tests {
                 output_tokens: 50,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = FraudAuditor::new(Arc::new(mock));
         let err = agent
             .process(AgentContext::new("stark", "inv-001"))
@@ -307,7 +311,8 @@ mod tests {
                 output_tokens: 50,
                 model_id: "mock".to_string(),
                 finish_reason: crate::llm::FinishReason::Stop,
-            }        );
+            },
+        );
         let agent = FraudAuditor::new(Arc::new(mock));
         let err = agent
             .process(AgentContext::new("stark", "inv-001"))

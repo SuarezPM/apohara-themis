@@ -82,7 +82,10 @@ fn approved_packet_surfaces_26_populated_fields() {
     assert_eq!(report.total_fields, 30);
     assert!((report.coverage_pct - 1.0).abs() < 1e-5);
     assert!(report.ac8_pass, "AC8 must pass on APPROVED packet");
-    assert!(report.ac15_pass, "AC15 must pass on APPROVED packet (Art 12 8/8)");
+    assert!(
+        report.ac15_pass,
+        "AC15 must pass on APPROVED packet (Art 12 8/8)"
+    );
 }
 
 #[test]
@@ -95,8 +98,7 @@ fn approved_packet_field_breakdown_matches_dashboard_columns() {
     let mut by_fw: std::collections::BTreeMap<String, Vec<String>> =
         std::collections::BTreeMap::new();
     for map in &report.frameworks {
-        let names: Vec<String> =
-            map.fields.iter().map(|(n, _)| (*n).to_string()).collect();
+        let names: Vec<String> = map.fields.iter().map(|(n, _)| (*n).to_string()).collect();
         by_fw.insert(map.framework.as_str().to_string(), names);
     }
 
@@ -106,7 +108,9 @@ fn approved_packet_field_breakdown_matches_dashboard_columns() {
     assert!(dora.iter().any(|n| n == "art_10_incident_detection"));
     assert!(dora.iter().any(|n| n == "art_17_incident_reporting"));
 
-    let euaiact = by_fw.get("eu_ai_act").expect("EU AI Act column must be present");
+    let euaiact = by_fw
+        .get("eu_ai_act")
+        .expect("EU AI Act column must be present");
     assert_eq!(
         euaiact.len(),
         9,
@@ -117,7 +121,9 @@ fn approved_packet_field_breakdown_matches_dashboard_columns() {
     assert_eq!(art12_count, 8, "EU AI Act Art 12 must be 8/8");
     assert!(euaiact.iter().any(|n| n == "art_26_deployer_name"));
 
-    let nist = by_fw.get("nist_ai_rmf").expect("NIST column must be present");
+    let nist = by_fw
+        .get("nist_ai_rmf")
+        .expect("NIST column must be present");
     assert_eq!(nist.len(), 4, "NIST must have 4 functions, got {:?}", nist);
     assert!(nist.contains(&"govern".to_string()));
     assert!(nist.contains(&"map".to_string()));
@@ -127,7 +133,12 @@ fn approved_packet_field_breakdown_matches_dashboard_columns() {
     let owasp = by_fw
         .get("owasp_agentic")
         .expect("OWASP column must be present");
-    assert_eq!(owasp.len(), 10, "OWASP must have 10 ASI fields, got {:?}", owasp);
+    assert_eq!(
+        owasp.len(),
+        10,
+        "OWASP must have 10 ASI fields, got {:?}",
+        owasp
+    );
     for asi in &[
         "ASI01_prompt_injection",
         "ASI02_sensitive_data_exposure",
@@ -186,9 +197,7 @@ fn compliance_report_serializes_with_field_level_detail_for_dashboard() {
             .expect("each framework must have a fields array");
         for row in fields {
             // Each row is serialized as a 2-element array: [name, value]
-            let arr = row
-                .as_array()
-                .expect("each field row must be a JSON array");
+            let arr = row.as_array().expect("each field row must be a JSON array");
             assert_eq!(arr.len(), 2, "field row must be [name, value]");
             assert!(arr[0].is_string(), "field name must be a string");
             total_field_rows += 1;

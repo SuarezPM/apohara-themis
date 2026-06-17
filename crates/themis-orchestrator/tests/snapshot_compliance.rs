@@ -16,8 +16,9 @@ use axum::body::Body;
 use axum::http::Request;
 use tower::ServiceExt;
 
-use themis_agents::llm::{LlmResponse, MockLlmProvider};
+use themis_agents::baaar::Outcome;
 use themis_agents::decision::{AgentDecision, DecisionType};
+use themis_agents::llm::{LlmResponse, MockLlmProvider};
 use themis_evidence::rekor::MockRekorClient;
 use themis_orchestrator::http::{build_router, AppState};
 use themis_orchestrator::orchestrator::Orchestrator;
@@ -26,7 +27,6 @@ use themis_orchestrator::pdf::render_packet_pdf;
 use themis_orchestrator::room::MockBandRoom;
 use themis_orchestrator::tenants::TenantRegistry;
 use themis_orchestrator::test_support::DemoInvoice;
-use themis_agents::baaar::Outcome;
 
 fn router_for(f: &DemoInvoice) -> axum::Router {
     let mock_llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(
@@ -38,8 +38,9 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
                     input_tokens: 256,
                     output_tokens: 128,
                     model_id: "snapshot-mock".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-                        })
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_response(
                 "assess_fraud_risk",
                 LlmResponse {
@@ -57,17 +58,19 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
                     input_tokens: 256,
                     output_tokens: 64,
                     model_id: "snapshot-mock".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-                        })
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_default(LlmResponse {
                 text: serde_json::json!({"stub":"ok"}).to_string(),
                 input_tokens: 64,
                 output_tokens: 32,
                 model_id: "snapshot-mock".to_string(),
-            finish_reason: themis_agents::llm::FinishReason::Stop,
+                finish_reason: themis_agents::llm::FinishReason::Stop,
             }),
     );
-    let agents = themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
+    let agents =
+        themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let orch = Orchestrator::new_with_rekor(
@@ -139,7 +142,13 @@ async fn approved_compliance_report_shape() {
         .collect();
     assert_eq!(
         framework_names,
-        vec!["dora", "eu_ai_act", "nist_ai_rmf", "owasp_agentic", "iso_42001"],
+        vec![
+            "dora",
+            "eu_ai_act",
+            "nist_ai_rmf",
+            "owasp_agentic",
+            "iso_42001"
+        ],
         "framework order locked: {framework_names:?}"
     );
 
@@ -249,14 +258,54 @@ fn pdf_sample_packet() -> SignedPacket {
         payload: serde_json::json!({}),
     };
     let decisions = vec![
-        mk("extractor", DecisionType::Extracted, 0.95, "extracted line items from invoice text"),
-        mk("po_matcher", DecisionType::PoMatched, 0.88, "matched PO 4500123456"),
-        mk("fraud_auditor", DecisionType::FraudAssessed, 0.42, "risk_score=0.42 below threshold"),
-        mk("audit_watchdog", DecisionType::WatchdogAlert, 0.91, "coherence within bounds"),
-        mk("gaap_classifier", DecisionType::GaapClassified, 0.83, "expense / office supplies"),
-        mk("regression_tester", DecisionType::RegressionResult, 1.0, "signature verified ok"),
-        mk("provenance_signer", DecisionType::ProvenanceSigned, 1.0, "Ed25519 signature sealed"),
-        mk("narrator", DecisionType::Narrated, 0.97, "policy version themis@2026-06-12 matched"),
+        mk(
+            "extractor",
+            DecisionType::Extracted,
+            0.95,
+            "extracted line items from invoice text",
+        ),
+        mk(
+            "po_matcher",
+            DecisionType::PoMatched,
+            0.88,
+            "matched PO 4500123456",
+        ),
+        mk(
+            "fraud_auditor",
+            DecisionType::FraudAssessed,
+            0.42,
+            "risk_score=0.42 below threshold",
+        ),
+        mk(
+            "audit_watchdog",
+            DecisionType::WatchdogAlert,
+            0.91,
+            "coherence within bounds",
+        ),
+        mk(
+            "gaap_classifier",
+            DecisionType::GaapClassified,
+            0.83,
+            "expense / office supplies",
+        ),
+        mk(
+            "regression_tester",
+            DecisionType::RegressionResult,
+            1.0,
+            "signature verified ok",
+        ),
+        mk(
+            "provenance_signer",
+            DecisionType::ProvenanceSigned,
+            1.0,
+            "Ed25519 signature sealed",
+        ),
+        mk(
+            "narrator",
+            DecisionType::Narrated,
+            0.97,
+            "policy version themis@2026-06-12 matched",
+        ),
     ];
     let packet = EvidencePacket::new("stark", "inv-pdf", decisions, Outcome::Approve);
     SignedPacket::wrap(packet, "00".repeat(64), "11".repeat(32))

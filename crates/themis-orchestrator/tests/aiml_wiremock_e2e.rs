@@ -79,9 +79,8 @@ fn aiml_response_body() -> serde_json::Value {
 /// calls (even the non-LLM ones) routed through the AIML backend
 /// for end-to-end coverage.
 fn build_orchestrator_for(aiml_url: String) -> Orchestrator {
-    let aiml: Arc<dyn LlmBackend> = Arc::new(
-        AIMLAPIBackend::new("test".to_string(), AIML_API_MODEL).with_base_url(aiml_url),
-    );
+    let aiml: Arc<dyn LlmBackend> =
+        Arc::new(AIMLAPIBackend::new("test".to_string(), AIML_API_MODEL).with_base_url(aiml_url));
     let mut dispatch: HashMap<String, Arc<dyn LlmBackend>> = HashMap::new();
     for name in [
         "extractor",
@@ -312,8 +311,7 @@ async fn aimlapi_provider_active_event_fires_end_to_end() {
             let guard = collected.lock().unwrap();
             for v in guard.iter() {
                 if v.get("type").and_then(|t| t.as_str()) == Some("provider_active")
-                    && v.get("model_id").and_then(|m| m.as_str())
-                        == Some(AIML_API_MODEL)
+                    && v.get("model_id").and_then(|m| m.as_str()) == Some(AIML_API_MODEL)
                 {
                     found_provider_active = true;
                     break;

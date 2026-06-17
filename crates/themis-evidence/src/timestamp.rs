@@ -153,9 +153,8 @@ impl TimestampAuthority for FreeTSAAuthority {
         // The full PKCS#7 / CMS envelope (certificates,
         // signing cert ref, etc.) is out of scope; FreeTSA
         // accepts the minimal form.
-        let hash_bytes = hex::decode(hash_hex).map_err(|e| {
-            TsError::InvalidResponse(format!("hash must be hex: {e}"))
-        })?;
+        let hash_bytes = hex::decode(hash_hex)
+            .map_err(|e| TsError::InvalidResponse(format!("hash must be hex: {e}")))?;
         // SHA-256 OID: 2.16.840.1.101.3.4.2.1
         // Encoded as DER: 06 09 60 86 48 01 65 03 04 02 01
         let mut req = Vec::with_capacity(64 + hash_bytes.len());
@@ -197,9 +196,7 @@ impl TimestampAuthority for FreeTSAAuthority {
             .map_err(|e| TsError::Transport(format!("FreeTSA POST: {e}")))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(TsError::Transport(format!(
-                "FreeTSA returned {status}"
-            )));
+            return Err(TsError::Transport(format!("FreeTSA returned {status}")));
         }
         let raw_der = response
             .bytes()

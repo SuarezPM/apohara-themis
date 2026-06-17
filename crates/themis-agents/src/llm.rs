@@ -417,16 +417,16 @@ impl LlmBackend for FeatherlessBackend {
                         )));
                     }
                     // Success: parse the OpenAI-compat envelope.
-                    let raw = resp.text().await.map_err(|e| {
-                        AgentError::LlmUnavailable(format!("read body: {e}"))
+                    let raw = resp
+                        .text()
+                        .await
+                        .map_err(|e| AgentError::LlmUnavailable(format!("read body: {e}")))?;
+                    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+                        AgentError::LlmMalformedPayload(format!(
+                            "Featherless returned non-JSON: {e}: {}",
+                            &raw.chars().take(200).collect::<String>()
+                        ))
                     })?;
-                    let parsed: serde_json::Value =
-                        serde_json::from_str(&raw).map_err(|e| {
-                            AgentError::LlmMalformedPayload(format!(
-                                "Featherless returned non-JSON: {e}: {}",
-                                &raw.chars().take(200).collect::<String>()
-                            ))
-                        })?;
                     let text = parsed["choices"][0]["message"]["content"]
                         .as_str()
                         .ok_or_else(|| {
@@ -435,15 +435,12 @@ impl LlmBackend for FeatherlessBackend {
                             )
                         })?
                         .to_string();
-                    let input_tokens = parsed["usage"]["prompt_tokens"]
-                        .as_u64()
-                        .unwrap_or(0) as u32;
-                    let output_tokens = parsed["usage"]["completion_tokens"]
-                        .as_u64()
-                        .unwrap_or(0) as u32;
-                    let finish_reason = parse_finish_reason(
-                        parsed["choices"][0]["finish_reason"].as_str(),
-                    );
+                    let input_tokens =
+                        parsed["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                    let output_tokens =
+                        parsed["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                    let finish_reason =
+                        parse_finish_reason(parsed["choices"][0]["finish_reason"].as_str());
                     return Ok(LlmResponse {
                         text,
                         input_tokens,
@@ -518,10 +515,7 @@ impl AIMLAPIBackend {
     /// (used by the orchestrator when `AIMLAPI_BASE_URL` is set,
     /// e.g. for tests pointing at a local WireMock server).
     /// `url_override` of `None` defaults to `https://api.aimlapi.com`.
-    pub fn from_env_with_url(
-        model: &'static str,
-        url_override: Option<String>,
-    ) -> Option<Self> {
+    pub fn from_env_with_url(model: &'static str, url_override: Option<String>) -> Option<Self> {
         let api_key = std::env::var("AIML_API_KEY").ok()?;
         let api_key = api_key.trim();
         if api_key.is_empty() {
@@ -616,9 +610,7 @@ impl LlmBackend for AIMLAPIBackend {
                         continue;
                     }
                     if status.is_server_error() {
-                        return Err(AgentError::LlmUnavailable(format!(
-                            "AIMLAPI 5xx: {status}"
-                        )));
+                        return Err(AgentError::LlmUnavailable(format!("AIMLAPI 5xx: {status}")));
                     }
                     if status == reqwest::StatusCode::UNAUTHORIZED
                         || status == reqwest::StatusCode::FORBIDDEN
@@ -635,12 +627,7 @@ impl LlmBackend for AIMLAPIBackend {
                                     .and_then(|m| m.as_str())
                                     .map(|s| s.to_string())
                             })
-                            .unwrap_or_else(|| {
-                                raw_body
-                                    .chars()
-                                    .take(200)
-                                    .collect::<String>()
-                            });
+                            .unwrap_or_else(|| raw_body.chars().take(200).collect::<String>());
                         return Err(AgentError::AuthenticationError {
                             provider: "aimlapi",
                             reason,
@@ -658,16 +645,16 @@ impl LlmBackend for AIMLAPIBackend {
                             "AIMLAPI {status}: {body_snippet}"
                         )));
                     }
-                    let raw = resp.text().await.map_err(|e| {
-                        AgentError::LlmUnavailable(format!("read body: {e}"))
+                    let raw = resp
+                        .text()
+                        .await
+                        .map_err(|e| AgentError::LlmUnavailable(format!("read body: {e}")))?;
+                    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+                        AgentError::LlmMalformedPayload(format!(
+                            "AIMLAPI returned non-JSON: {e}: {}",
+                            &raw.chars().take(200).collect::<String>()
+                        ))
                     })?;
-                    let parsed: serde_json::Value =
-                        serde_json::from_str(&raw).map_err(|e| {
-                            AgentError::LlmMalformedPayload(format!(
-                                "AIMLAPI returned non-JSON: {e}: {}",
-                                &raw.chars().take(200).collect::<String>()
-                            ))
-                        })?;
                     let text = parsed["choices"][0]["message"]["content"]
                         .as_str()
                         .ok_or_else(|| {
@@ -676,15 +663,12 @@ impl LlmBackend for AIMLAPIBackend {
                             )
                         })?
                         .to_string();
-                    let input_tokens = parsed["usage"]["prompt_tokens"]
-                        .as_u64()
-                        .unwrap_or(0) as u32;
-                    let output_tokens = parsed["usage"]["completion_tokens"]
-                        .as_u64()
-                        .unwrap_or(0) as u32;
-                    let finish_reason = parse_finish_reason(
-                        parsed["choices"][0]["finish_reason"].as_str(),
-                    );
+                    let input_tokens =
+                        parsed["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                    let output_tokens =
+                        parsed["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                    let finish_reason =
+                        parse_finish_reason(parsed["choices"][0]["finish_reason"].as_str());
                     return Ok(LlmResponse {
                         text,
                         input_tokens,
@@ -809,9 +793,7 @@ pub fn model_id_for_agent(agent_name: &str) -> Option<&'static str> {
         "gaap_classifier" => Some("meta-llama/Llama-3.3-70B-Instruct"),
         "extractor" => Some("Qwen/Qwen3-30B"),
         // Shadow agents: cheap dense model.
-        "demo_narrator" | "audit_watchdog" | "regression_tester" => {
-            Some("Qwen/Qwen3-30B")
-        }
+        "demo_narrator" | "audit_watchdog" | "regression_tester" => Some("Qwen/Qwen3-30B"),
         // Deterministic: no LLM.
         "po_matcher" | "provenance_signer" => None,
         // Unknown agent: don't guess.
@@ -945,14 +927,8 @@ mod tests {
     fn heterogeneous_routing_shadow_agents_get_cheap_model() {
         // Shadow agents share the cheap dense Qwen3-30B (no
         // heterogeneity needed; they're observers).
-        assert_eq!(
-            model_id_for_agent("demo_narrator"),
-            Some("Qwen/Qwen3-30B")
-        );
-        assert_eq!(
-            model_id_for_agent("audit_watchdog"),
-            Some("Qwen/Qwen3-30B")
-        );
+        assert_eq!(model_id_for_agent("demo_narrator"), Some("Qwen/Qwen3-30B"));
+        assert_eq!(model_id_for_agent("audit_watchdog"), Some("Qwen/Qwen3-30B"));
         assert_eq!(
             model_id_for_agent("regression_tester"),
             Some("Qwen/Qwen3-30B")
@@ -1010,7 +986,8 @@ mod tests {
         // rate=0.5).
         let long_prompt = "please classify the following invoice \
             and return a JSON object with the fields vendor amount date \
-            and po reference for our records".to_string();
+            and po reference for our records"
+            .to_string();
         let original_len = long_prompt.len();
         let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let inner = RecordingMock {
@@ -1193,8 +1170,11 @@ mod tests {
             )
         });
 
-        let backend = FeatherlessBackend::new("sk-test-secret".to_string(), "Qwen/Qwen3-Coder-30B-A3B-Instruct")
-            .with_base_url(format!("http://127.0.0.1:{port}"));
+        let backend = FeatherlessBackend::new(
+            "sk-test-secret".to_string(),
+            "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        )
+        .with_base_url(format!("http://127.0.0.1:{port}"));
         let resp = backend
             .complete(LlmRequest {
                 system_prompt: "you are a classifier".to_string(),
@@ -1563,8 +1543,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let backend = AIMLAPIBackend::new("sk-aiml-test".to_string(), "anthropic/claude-sonnet-4.5")
-            .with_base_url(server.uri());
+        let backend =
+            AIMLAPIBackend::new("sk-aiml-test".to_string(), "anthropic/claude-sonnet-4.5")
+                .with_base_url(server.uri());
         let resp = backend
             .complete(LlmRequest {
                 system_prompt: "you are a fraud auditor".to_string(),
@@ -1667,8 +1648,11 @@ mod tests {
         /// real `AIML_API_KEY` because the WireMock server never
         /// validates the Authorization header.
         fn aimlapi_at(server: &MockServer) -> AIMLAPIBackend {
-            AIMLAPIBackend::new("sk-aiml-wiremock".to_string(), "anthropic/claude-sonnet-4.5")
-                .with_base_url(server.uri())
+            AIMLAPIBackend::new(
+                "sk-aiml-wiremock".to_string(),
+                "anthropic/claude-sonnet-4.5",
+            )
+            .with_base_url(server.uri())
         }
 
         fn default_request() -> LlmRequest {
@@ -1799,10 +1783,7 @@ mod tests {
 
             // Third call: 200 -> Ok. Total hit count: 3
             // (2x 500 + 1x 200).
-            let resp = backend
-                .complete(default_request())
-                .await
-                .unwrap();
+            let resp = backend.complete(default_request()).await.unwrap();
             assert_eq!(resp.text, "ok-after-5xx");
             assert_eq!(resp.finish_reason, FinishReason::Stop);
         }
@@ -1947,8 +1928,7 @@ mod tests {
                 return;
             }
 
-            let backend =
-                AIMLAPIBackend::new(api_key, "anthropic/claude-sonnet-4.5");
+            let backend = AIMLAPIBackend::new(api_key, "anthropic/claude-sonnet-4.5");
             let req = LlmRequest {
                 system_prompt: "You are a JSON echo.".to_string(),
                 user_prompt: "Reply with the single word: pong".to_string(),

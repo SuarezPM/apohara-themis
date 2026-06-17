@@ -159,10 +159,7 @@ impl EvidenceService {
     /// committed in `keys/{tenant}.ed25519` and embedded via
     /// `include_bytes!`. Returns `EvError::Signer(UnknownTenant)`
     /// for any other id.
-    pub fn for_tenant(
-        tenant_id: &str,
-        tsa: Arc<dyn TimestampAuthority>,
-    ) -> Result<Self, EvError> {
+    pub fn for_tenant(tenant_id: &str, tsa: Arc<dyn TimestampAuthority>) -> Result<Self, EvError> {
         let signer = SignerService::for_tenant(tenant_id)?;
         Ok(Self {
             signer,
@@ -247,11 +244,10 @@ impl EvidenceService {
         let public_key_hex = self.signer.public_key_hex();
         use base64::Engine;
         let dsse_envelope = {
-            let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(&payload_canonical_json);
+            let payload_b64 =
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload_canonical_json);
             let sig_bytes = hex::decode(&signature_hex).unwrap_or_default();
-            let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(&sig_bytes);
+            let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&sig_bytes);
             let keyid: String = public_key_hex.chars().take(16).collect();
             DsseEnvelope {
                 payload_type: "application/vnd.apohara.themis.entry+json".to_string(),
@@ -428,7 +424,10 @@ mod tests {
         let payload = "hello world";
         let hash_hex = blake3::hash(payload.as_bytes()).to_hex().to_string();
         let entry = rekor.anchor(&hash_hex, "stark").await.unwrap();
-        let packet = svc.seal("inv-001", payload, Some(entry.clone())).await.unwrap();
+        let packet = svc
+            .seal("inv-001", payload, Some(entry.clone()))
+            .await
+            .unwrap();
         let carried = packet
             .rekor_entry
             .expect("rekor_entry should be carried when Some");

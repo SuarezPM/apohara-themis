@@ -544,8 +544,7 @@ mod sigstore_verify_tests {
         // The whole point: no I/O, no network, the trust root
         // is a const. If this constructs, the trust root
         // parsed.
-        let client = SigstoreVerifyRekorClient::new()
-            .expect("embedded trust root must parse");
+        let client = SigstoreVerifyRekorClient::new().expect("embedded trust root must parse");
         // Sanity: the trusted_root is non-empty (the production
         // JSON is ~30 KB).
         // We can't introspect the TrustedRoot directly, but

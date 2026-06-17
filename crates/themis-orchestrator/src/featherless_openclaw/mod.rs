@@ -93,8 +93,14 @@ impl LlmBackend for OpenClawBackend {
         let body = OpenClawChatRequest {
             model: self.model.clone(),
             messages: vec![
-                OpenClawMessage { role: "system".into(), content: req.system_prompt },
-                OpenClawMessage { role: "user".into(), content: req.user_prompt },
+                OpenClawMessage {
+                    role: "system".into(),
+                    content: req.system_prompt,
+                },
+                OpenClawMessage {
+                    role: "user".into(),
+                    content: req.user_prompt,
+                },
             ],
             max_tokens: req.max_tokens,
             temperature: req.temperature,
@@ -107,14 +113,13 @@ impl LlmBackend for OpenClawBackend {
             .json(&body)
             .send()
             .await
-            .map_err(|e| {
-                AgentError::LlmUnavailable(format!("OpenClaw network: {e}"))
-            })?;
+            .map_err(|e| AgentError::LlmUnavailable(format!("OpenClaw network: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(AgentError::LlmUnavailable(format!(
-                "OpenClaw {status}: {}", &body.chars().take(200).collect::<String>()
+                "OpenClaw {status}: {}",
+                &body.chars().take(200).collect::<String>()
             )));
         }
         let parsed: OpenClawChatResponse = resp
@@ -138,7 +143,10 @@ mod tests {
 
     #[test]
     fn openclaw_label_is_featherless_openclaw() {
-        let backend = OpenClawBackend::new("http://localhost:18780", "Qwen/Qwen3-Coder-30B-A3B-Instruct");
+        let backend = OpenClawBackend::new(
+            "http://localhost:18780",
+            "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        );
         assert_eq!(backend.model_id(), "featherless-openclaw");
     }
 
@@ -149,8 +157,14 @@ mod tests {
         let req = OpenClawChatRequest {
             model: "Qwen/Qwen3-Coder-30B-A3B-Instruct".to_string(),
             messages: vec![
-                OpenClawMessage { role: "system".into(), content: "you are a fraud auditor".into() },
-                OpenClawMessage { role: "user".into(), content: "assess this".into() },
+                OpenClawMessage {
+                    role: "system".into(),
+                    content: "you are a fraud auditor".into(),
+                },
+                OpenClawMessage {
+                    role: "user".into(),
+                    content: "assess this".into(),
+                },
             ],
             max_tokens: 64,
             temperature: 0.0,

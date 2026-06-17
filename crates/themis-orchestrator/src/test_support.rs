@@ -135,8 +135,9 @@ pub fn stub_default_response(model_id: &str) -> LlmResponse {
         input_tokens: 64,
         output_tokens: 32,
         model_id: model_id.to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-            }}
+        finish_reason: themis_agents::llm::FinishReason::Stop,
+    }
+}
 
 /// Path to the 5 demo invoice fixtures at the repo root.
 pub fn fixtures_dir() -> PathBuf {
@@ -250,14 +251,9 @@ pub fn build_stub_agents(
         // Per-agent LLM: fall back to a MockLlmProvider if the
         // dispatch map doesn't include this agent (e.g. tests
         // that wire only one mock).
-        let llm = backends
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| {
-                themis_agents::llm::shared(themis_agents::llm::MockLlmProvider::new(
-                    "mock-fallback",
-                ))
-            });
+        let llm = backends.get(name).cloned().unwrap_or_else(|| {
+            themis_agents::llm::shared(themis_agents::llm::MockLlmProvider::new("mock-fallback"))
+        });
         agents.insert(
             name.to_string(),
             Arc::new(LlmStubAgent {
@@ -312,9 +308,7 @@ pub fn build_stub_agents_with_mock(
 /// unset, all LLM-driven agents fall back to `MockLlmProvider`
 /// (test mode / no-cost demo).
 pub fn build_default_dispatch() -> HashMap<String, Arc<dyn LlmBackend>> {
-    use themis_agents::llm::{
-        shared, AIMLAPIBackend, FeatherlessBackend, MockLlmProvider,
-    };
+    use themis_agents::llm::{shared, AIMLAPIBackend, FeatherlessBackend, MockLlmProvider};
     let mut m: HashMap<String, Arc<dyn LlmBackend>> = HashMap::new();
 
     // --- 5 Featherless (open source) agents ---
@@ -367,10 +361,7 @@ pub fn build_default_dispatch() -> HashMap<String, Arc<dyn LlmBackend>> {
         "fraud_auditor".into(),
         AIMLAPIBackend::from_env("anthropic/claude-sonnet-4.5")
             .map(shared)
-            .or_else(|| {
-                FeatherlessBackend::from_env("Qwen/Qwen3-32B")
-                    .map(shared)
-            })
+            .or_else(|| FeatherlessBackend::from_env("Qwen/Qwen3-32B").map(shared))
             .unwrap_or_else(|| shared(MockLlmProvider::new("aimlapi-or-featherless-fraud"))),
     );
 
@@ -407,8 +398,9 @@ pub fn build_orchestrator(
                     input_tokens: 256,
                     output_tokens: 128,
                     model_id: "mock-test".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-            }            )
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_response(
                 "assess_fraud_risk",
                 LlmResponse {
@@ -416,8 +408,9 @@ pub fn build_orchestrator(
                     input_tokens: 256,
                     output_tokens: 64,
                     model_id: "mock-test".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-            }            )
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_default(stub_default_response("mock-test")),
     );
     // Tests use a single mock LLM shared across all agents.
@@ -461,8 +454,9 @@ pub fn build_orchestrator_with_evidence(
                     input_tokens: 256,
                     output_tokens: 128,
                     model_id: "mock-test".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-            }            )
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_response(
                 "assess_fraud_risk",
                 LlmResponse {
@@ -470,8 +464,9 @@ pub fn build_orchestrator_with_evidence(
                     input_tokens: 256,
                     output_tokens: 64,
                     model_id: "mock-test".to_string(),
-                finish_reason: themis_agents::llm::FinishReason::Stop,
-            }            )
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
             .with_default(stub_default_response("mock-test")),
     );
     let mut dispatch = HashMap::new();

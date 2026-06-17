@@ -38,8 +38,7 @@ fn load_fixture(name: &str) -> DemoInvoice {
 fn evidence_map() -> std::collections::HashMap<String, EvidenceService> {
     let mut m = std::collections::HashMap::new();
     for tenant in ["stark", "wayne"] {
-        let svc = EvidenceService::for_tenant(tenant, tsa())
-            .expect("baked tenant must have a key");
+        let svc = EvidenceService::for_tenant(tenant, tsa()).expect("baked tenant must have a key");
         m.insert(tenant.to_string(), svc);
     }
     m
@@ -50,7 +49,8 @@ async fn sealed_packet_with_rekor_entry_round_trips_through_json() {
     let mut svc = EvidenceService::from_seed("stark", [0xA1; 32], tsa());
     let rekor = MockRekorClient::new();
 
-    let payload = r#"{"invoice_id":"inv-rekor-1","tenant":"stark","vendor":"ACME","amount_cents":4242}"#;
+    let payload =
+        r#"{"invoice_id":"inv-rekor-1","tenant":"stark","vendor":"ACME","amount_cents":4242}"#;
     let hash_hex = blake3::hash(payload.as_bytes()).to_hex().to_string();
     let entry = rekor.anchor(&hash_hex, "stark").await.unwrap();
 
@@ -71,10 +71,12 @@ async fn sealed_packet_with_rekor_entry_round_trips_through_json() {
         "serialized packet must include rekor_entry key (got: {json})"
     );
 
-    let parsed: themis_evidence::packet::SealedPacket =
-        serde_json::from_str(&json).expect("parse");
+    let parsed: themis_evidence::packet::SealedPacket = serde_json::from_str(&json).expect("parse");
     assert_eq!(parsed.rekor_entry.as_ref().unwrap().uuid, carried.uuid);
-    assert_eq!(parsed.rekor_entry.as_ref().unwrap().log_index, carried.log_index);
+    assert_eq!(
+        parsed.rekor_entry.as_ref().unwrap().log_index,
+        carried.log_index
+    );
 }
 
 /// US-A5: `process_invoice_sealed` propagates the inner

@@ -31,9 +31,7 @@
 
 use std::sync::Arc;
 
-use themis_evidence::rekor::{
-    CosignRekorClient, MockRekorClient, RekorClient,
-};
+use themis_evidence::rekor::{CosignRekorClient, MockRekorClient, RekorClient};
 use themis_evidence::rekor_v2::{RekorV2Client, REKOR_V2_DEFAULT_ENDPOINT};
 
 /// Environment variable that selects the Rekor backend. Default

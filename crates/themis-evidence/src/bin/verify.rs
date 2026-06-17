@@ -132,7 +132,10 @@ fn main() -> ExitCode {
             println!("  chain_length:  {}", packet.chain_length);
             match &packet.rekor_entry {
                 Some(entry) => {
-                    println!("  rekor:         {} @ log_index={}", entry.uuid, entry.log_index);
+                    println!(
+                        "  rekor:         {} @ log_index={}",
+                        entry.uuid, entry.log_index
+                    );
                     println!("  rekor_url:     {}", entry.bundle_url);
                 }
                 None => {

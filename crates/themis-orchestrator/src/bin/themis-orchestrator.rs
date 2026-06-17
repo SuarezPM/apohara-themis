@@ -91,9 +91,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // demo degrades gracefully when the public TSA is
     // unreachable. The real FreeTSA wire is verified in
     // `themis-evidence::FreeTSAAuthority`.
-    let tsa: Arc<dyn themis_evidence::timestamp::TimestampAuthority> = Arc::new(
-        themis_evidence::timestamp::FreeTSAAuthority::freetsa(),
-    );
+    let tsa: Arc<dyn themis_evidence::timestamp::TimestampAuthority> =
+        Arc::new(themis_evidence::timestamp::FreeTSAAuthority::freetsa());
 
     // Build the evidence service for each baked tenant. The
     // orchestrator sels into a per-tenant HashChain so the
@@ -181,11 +180,7 @@ impl themis_agents::traits::Agent for StubAgent {
             _ => unreachable!(),
         };
         let payload = if self.name == "fraud_auditor" {
-            fraud_auditor_payload_for(
-                &ctx.tenant_id,
-                &ctx.invoice_id,
-                &self.fixture_lookup,
-            )
+            fraud_auditor_payload_for(&ctx.tenant_id, &ctx.invoice_id, &self.fixture_lookup)
         } else {
             serde_json::json!({"outcome": "approve"})
         };
@@ -306,13 +301,7 @@ fn halt_reason_to_outcome_tag(reason: &str) -> &'static str {
 fn halt_payload_for(f: &DemoFixture) -> (f32, Vec<serde_json::Value>, f32, u32, bool) {
     let human = f.halt_reason_human.clone();
     match f.expected_halt_reason.as_str() {
-        "risk_score_exceeded" => (
-            0.95,
-            vec![],
-            0.8,
-            1,
-            false,
-        ),
+        "risk_score_exceeded" => (0.95, vec![], 0.8, 1, false),
         "secret_leak_detected" => (
             0.5,
             vec![serde_json::json!({
@@ -338,7 +327,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn lookup_with(fixtures: Vec<DemoFixture>) -> std::sync::Arc<HashMap<(String, String), DemoFixture>> {
+    fn lookup_with(
+        fixtures: Vec<DemoFixture>,
+    ) -> std::sync::Arc<HashMap<(String, String), DemoFixture>> {
         let mut map: HashMap<(String, String), DemoFixture> = HashMap::new();
         for f in fixtures {
             map.insert((f.tenant_id.clone(), f.invoice_id.clone()), f);
@@ -362,7 +353,10 @@ mod tests {
     fn halt_payload_for_risk_score_exceeded_triggers_risk_path() {
         let f = fixture("stark", "inv-1", "HALT", "risk_score_exceeded");
         let (risk, findings, coh, rounds, explicit) = halt_payload_for(&f);
-        assert!(risk > 0.85, "risk_score must exceed 0.85 to fire BAAAR, got {risk}");
+        assert!(
+            risk > 0.85,
+            "risk_score must exceed 0.85 to fire BAAAR, got {risk}"
+        );
         assert!(findings.is_empty(), "no findings — risk path only");
         assert!(coh >= 0.3, "coherence must not also trip");
         assert!(rounds < 5, "debate_rounds must not also trip");
@@ -398,7 +392,10 @@ mod tests {
         let (risk, _findings, coh, rounds, explicit) = halt_payload_for(&f);
         assert!(risk <= 0.85);
         assert!(coh >= 0.3);
-        assert_eq!(rounds, 5, "debate_rounds must be 5 to fire BAAAR, got {rounds}");
+        assert_eq!(
+            rounds, 5,
+            "debate_rounds must be 5 to fire BAAAR, got {rounds}"
+        );
         assert!(!explicit);
     }
 
@@ -420,10 +417,16 @@ mod tests {
         // risk_score=0.1f32 as f64 has f32 precision (0.1 != 0.1 in
         // exact equality). Use an approximate comparison.
         let risk = a["risk_score"].as_f64().unwrap();
-        assert!((risk - 0.1).abs() < 1e-6, "risk_score should be ~0.1, got {risk}");
+        assert!(
+            (risk - 0.1).abs() < 1e-6,
+            "risk_score should be ~0.1, got {risk}"
+        );
         assert_eq!(a["findings"].as_array().unwrap().len(), 0);
         let coh = a["coherence_score"].as_f64().unwrap();
-        assert!((coh - 0.9).abs() < 1e-6, "coherence_score should be ~0.9, got {coh}");
+        assert!(
+            (coh - 0.9).abs() < 1e-6,
+            "coherence_score should be ~0.9, got {coh}"
+        );
         assert_eq!(a["debate_rounds"].as_u64().unwrap(), 1);
         assert!(!a["explicit_halt"].as_bool().unwrap());
     }
@@ -441,7 +444,12 @@ mod tests {
 
     #[test]
     fn halt_fixture_produces_halt_triggering_assessment() {
-        let lookup = lookup_with(vec![fixture("stark", "inv-1", "HALT", "risk_score_exceeded")]);
+        let lookup = lookup_with(vec![fixture(
+            "stark",
+            "inv-1",
+            "HALT",
+            "risk_score_exceeded",
+        )]);
         let p = fraud_auditor_payload_for("stark", "inv-1", &lookup);
         let a = p["assessment"].as_object().unwrap();
         assert!(a["risk_score"].as_f64().unwrap() > 0.85);
@@ -454,13 +462,31 @@ mod tests {
 
     #[test]
     fn halt_reason_to_outcome_tag_maps_all_known_reasons() {
-        assert_eq!(halt_reason_to_outcome_tag("risk_score_exceeded"), "halt_risk_score_exceeded");
-        assert_eq!(halt_reason_to_outcome_tag("secret_leak_detected"), "halt_secret_leak_detected");
-        assert_eq!(halt_reason_to_outcome_tag("coherence_too_low"), "halt_coherence_too_low");
-        assert_eq!(halt_reason_to_outcome_tag("max_debate_rounds_reached"), "halt_max_debate_rounds_reached");
-        assert_eq!(halt_reason_to_outcome_tag("explicit_halt_requested"), "halt_explicit_halt_requested");
+        assert_eq!(
+            halt_reason_to_outcome_tag("risk_score_exceeded"),
+            "halt_risk_score_exceeded"
+        );
+        assert_eq!(
+            halt_reason_to_outcome_tag("secret_leak_detected"),
+            "halt_secret_leak_detected"
+        );
+        assert_eq!(
+            halt_reason_to_outcome_tag("coherence_too_low"),
+            "halt_coherence_too_low"
+        );
+        assert_eq!(
+            halt_reason_to_outcome_tag("max_debate_rounds_reached"),
+            "halt_max_debate_rounds_reached"
+        );
+        assert_eq!(
+            halt_reason_to_outcome_tag("explicit_halt_requested"),
+            "halt_explicit_halt_requested"
+        );
         // Unknown reason falls back to risk_score_exceeded (defensive).
-        assert_eq!(halt_reason_to_outcome_tag("mystery"), "halt_risk_score_exceeded");
+        assert_eq!(
+            halt_reason_to_outcome_tag("mystery"),
+            "halt_risk_score_exceeded"
+        );
     }
 
     #[test]
@@ -484,11 +510,8 @@ mod tests {
 
         let lookup = build_fixture_lookup();
         for ((tenant, invoice), fixture) in lookup.iter() {
-            let payload =
-                fraud_auditor_payload_for(tenant, invoice, &lookup);
-            let assessment = themis_agents::baaar::FraudAssessment::from_decision_payload(
-                &payload,
-            );
+            let payload = fraud_auditor_payload_for(tenant, invoice, &lookup);
+            let assessment = themis_agents::baaar::FraudAssessment::from_decision_payload(&payload);
             let outcome = themis_agents::baaar::BaaarGate::new().check(&assessment);
 
             match fixture.expected_verdict.as_str() {

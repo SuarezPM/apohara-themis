@@ -42,9 +42,8 @@ use crate::rekor::{RekorClient, RekorEntry, RekorError};
 
 // Generated module name (proto package `dev.sigstore.rekor.v2`).
 use crate::dev_sigstore_rekor_v2::{
-    rekor_client::RekorClient as GeneratedRekorClient,
-    CreateEntryRequest, HashedRekordRequestV002, PublicKey, Signature, SignatureAlgorithm,
-    TransparencyLogEntry, Verifier,
+    rekor_client::RekorClient as GeneratedRekorClient, CreateEntryRequest, HashedRekordRequestV002,
+    PublicKey, Signature, SignatureAlgorithm, TransparencyLogEntry, Verifier,
 };
 
 /// Hardcoded public-good Rekor v2 endpoint.
@@ -56,7 +55,8 @@ pub const REKOR_V2_DEFAULT_ENDPOINT: &str = "log2025-1.rekor.sigstore.dev:443";
 /// HTTP bundle URL base (REST gateway, used for the `bundle_url` we
 /// surface on each `RekorEntry`). The `/api/v2/log/entries/{uuid}`
 /// endpoint is the spec-documented way to fetch a v2 entry.
-pub const REKOR_V2_BUNDLE_URL_BASE: &str = "https://log2025-1.rekor.sigstore.dev/api/v2/log/entries";
+pub const REKOR_V2_BUNDLE_URL_BASE: &str =
+    "https://log2025-1.rekor.sigstore.dev/api/v2/log/entries";
 
 /// Per-call timeout for the gRPC unary `CreateEntry` request.
 const ANCHOR_TIMEOUT: Duration = Duration::from_secs(5);
@@ -120,9 +120,8 @@ impl RekorClient for RekorV2Client {
         _tenant_id: &str,
     ) -> Result<RekorEntry, RekorError> {
         // Decode the hex-encoded BLAKE3 hash into raw bytes.
-        let hash_bytes = hex::decode(blake3_hash_hex).map_err(|e| {
-            RekorError::InvalidResponse(format!("blake3 hash is not hex: {e}"))
-        })?;
+        let hash_bytes = hex::decode(blake3_hash_hex)
+            .map_err(|e| RekorError::InvalidResponse(format!("blake3 hash is not hex: {e}")))?;
 
         // Build the HashedRekordRequestV002 body.
         // DEMO-ONLY: signature content = hash bytes themselves. A real
@@ -148,14 +147,12 @@ impl RekorClient for RekorV2Client {
         // `create_entry` returns `tonic::Response<TransparencyLogEntry>`;
         // we extract the inner body before mapping into `RekorEntry`.
         let mut client = self.inner.clone();
-        let response: TransparencyLogEntry = tokio::time::timeout(
-            ANCHOR_TIMEOUT,
-            client.create_entry(request),
-        )
-        .await
-        .map_err(|_| RekorError::Transport("anchor timed out".to_string()))?
-        .map_err(|status: tonic::Status| RekorError::GrpcTransport(status))?
-        .into_inner();
+        let response: TransparencyLogEntry =
+            tokio::time::timeout(ANCHOR_TIMEOUT, client.create_entry(request))
+                .await
+                .map_err(|_| RekorError::Transport("anchor timed out".to_string()))?
+                .map_err(|status: tonic::Status| RekorError::GrpcTransport(status))?
+                .into_inner();
 
         let uuid = response.uuid;
         let body_b64 = response.body;
@@ -227,7 +224,8 @@ mod tests {
         let real_hash = blake3::hash(b"hello-themis").to_hex().to_string();
         // Hand-craft a RekorEntry whose body_b64 decodes to a
         // *different* string. The verify() check must reject it.
-        let bogus_body = base64::engine::general_purpose::STANDARD.encode(b"definitely-not-the-hash");
+        let bogus_body =
+            base64::engine::general_purpose::STANDARD.encode(b"definitely-not-the-hash");
         let entry = RekorEntry {
             uuid: "test-uuid".to_string(),
             log_index: 0,
@@ -250,13 +248,10 @@ mod tests {
         // rather than an open-ended hang.
         let c = RekorV2Client::with_endpoint("127.0.0.1:1", false).unwrap();
         let hash = blake3::hash(b"closed-port-test").to_hex().to_string();
-        let res = tokio::time::timeout(
-            Duration::from_millis(500),
-            c.anchor(&hash, "stark"),
-        )
-        .await
-        .expect("anchor() must not hang on a closed port")
-        .expect_err("anchor() against a closed port must return Err");
+        let res = tokio::time::timeout(Duration::from_millis(500), c.anchor(&hash, "stark"))
+            .await
+            .expect("anchor() must not hang on a closed port")
+            .expect_err("anchor() against a closed port must return Err");
 
         match res {
             RekorError::GrpcTransport(_) | RekorError::Transport(_) => {}

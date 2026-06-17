@@ -91,19 +91,11 @@ impl TenantRegistry {
     pub fn with_default_tenants() -> Self {
         let mut tenants = HashMap::new();
         for (id, name, key_id) in [
-            (
-                "stark",
-                "Stark Industries",
-                "stark-prod-2026-01",
-            ),
-            (
-                "wayne",
-                "Wayne Enterprises",
-                "wayne-prod-2026-01",
-            ),
+            ("stark", "Stark Industries", "stark-prod-2026-01"),
+            ("wayne", "Wayne Enterprises", "wayne-prod-2026-01"),
         ] {
-            let signer = themis_evidence::signer::SignerService::for_tenant(id)
-                .unwrap_or_else(|e| {
+            let signer =
+                themis_evidence::signer::SignerService::for_tenant(id).unwrap_or_else(|e| {
                     panic!(
                         "SignerService::for_tenant({id}) failed at startup: {e}. \
                          Seed file missing? Baked keys are at crates/themis-evidence/keys/."
@@ -206,18 +198,10 @@ mod tests {
         // The registry pubkey must match what the SignerService
         // returns for the same tenant. This is the contract that
         // makes `themis-verify` work end-to-end.
-        let stark_signer =
-            themis_evidence::signer::SignerService::for_tenant("stark").unwrap();
-        let wayne_signer =
-            themis_evidence::signer::SignerService::for_tenant("wayne").unwrap();
-        assert_eq!(
-            stark.ed25519_public_key_hex,
-            stark_signer.public_key_hex()
-        );
-        assert_eq!(
-            wayne.ed25519_public_key_hex,
-            wayne_signer.public_key_hex()
-        );
+        let stark_signer = themis_evidence::signer::SignerService::for_tenant("stark").unwrap();
+        let wayne_signer = themis_evidence::signer::SignerService::for_tenant("wayne").unwrap();
+        assert_eq!(stark.ed25519_public_key_hex, stark_signer.public_key_hex());
+        assert_eq!(wayne.ed25519_public_key_hex, wayne_signer.public_key_hex());
     }
 
     #[test]

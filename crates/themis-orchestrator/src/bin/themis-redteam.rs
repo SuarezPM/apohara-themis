@@ -398,7 +398,10 @@ fn run_redteam() -> RedteamReport {
         // pattern still demonstrates the contract: which
         // strings would catch a successful exploit.
         let detector_matched = regex_contains(attack.payload, attack.detector)
-            || attack.payload.to_lowercase().contains(&attack.name.replace('_', " "));
+            || attack
+                .payload
+                .to_lowercase()
+                .contains(&attack.name.replace('_', " "));
         // THEMIS blocks ALL of these (the patterns are
         // deliberately detectable in the payload, and the
         // mitigations are documented in the source). A real
@@ -415,7 +418,11 @@ fn run_redteam() -> RedteamReport {
         };
         let entry = by_category
             .entry(attack.asi.id().to_string())
-            .or_insert(CategoryStats { total: 0, blocked: 0, successful: 0 });
+            .or_insert(CategoryStats {
+                total: 0,
+                blocked: 0,
+                successful: 0,
+            });
         entry.total += 1;
         if blocked {
             entry.blocked += 1;
@@ -491,7 +498,11 @@ mod tests {
         let report = run_redteam();
         assert_eq!(report.total_prompts, 30);
         for (asi, stats) in &report.by_category {
-            assert_eq!(stats.total, 3, "{asi} should have 3 prompts, got {}", stats.total);
+            assert_eq!(
+                stats.total, 3,
+                "{asi} should have 3 prompts, got {}",
+                stats.total
+            );
         }
     }
 

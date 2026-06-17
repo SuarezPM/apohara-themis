@@ -92,7 +92,14 @@ pub trait BandRoom: Send + Sync + 'static {
     /// and truncates — backends with streaming can override.
     async fn tail(&self, room: RoomId, n: usize) -> Result<Vec<BandMessage>, BandError> {
         let all = self.history(room).await?;
-        Ok(all.into_iter().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect())
+        Ok(all
+            .into_iter()
+            .rev()
+            .take(n)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect())
     }
 }
 

@@ -32,12 +32,7 @@ fn build_qr_packet() -> SignedPacket {
         timestamp_ms: 1_700_000_002_000,
         payload: serde_json::json!({}),
     }];
-    let packet = EvidencePacket::new(
-        "stark",
-        "inv-qr-001",
-        decisions,
-        Outcome::Approve,
-    );
+    let packet = EvidencePacket::new("stark", "inv-qr-001", decisions, Outcome::Approve);
     SignedPacket::wrap(packet, "00".repeat(64), "11".repeat(32))
 }
 
@@ -73,7 +68,11 @@ fn build_qr_halt_packet() -> SignedPacket {
 fn renders_with_qr_code_in_footer() {
     let sp = build_qr_packet();
     let bytes = render_packet_pdf(&sp).expect("render");
-    assert!(bytes.len() > 1024, "PDF should be >1KB, got {}", bytes.len());
+    assert!(
+        bytes.len() > 1024,
+        "PDF should be >1KB, got {}",
+        bytes.len()
+    );
     assert_eq!(&bytes[..5], b"%PDF-", "PDF magic bytes missing");
 }
 
@@ -83,7 +82,11 @@ fn renders_with_qr_code_on_halt_outcome() {
     // HALT receipt must still reach the verify endpoint.
     let sp = build_qr_halt_packet();
     let bytes = render_packet_pdf(&sp).expect("render halt");
-    assert!(bytes.len() > 1024, "PDF should be >1KB, got {}", bytes.len());
+    assert!(
+        bytes.len() > 1024,
+        "PDF should be >1KB, got {}",
+        bytes.len()
+    );
     assert_eq!(&bytes[..5], b"%PDF-", "PDF magic bytes missing");
 }
 

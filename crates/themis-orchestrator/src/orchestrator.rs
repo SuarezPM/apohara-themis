@@ -321,9 +321,7 @@ impl Orchestrator {
             // fires visibly" claim real.
             if agent_name == "fraud_auditor" {
                 let assessment =
-                    themis_agents::baaar::FraudAssessment::from_decision_payload(
-                        &decision.payload,
-                    );
+                    themis_agents::baaar::FraudAssessment::from_decision_payload(&decision.payload);
                 let outcome = self.baaar.check(&assessment);
                 if let Outcome::Halt(reason) = outcome {
                     bbaaar_outcome = outcome;
@@ -382,11 +380,9 @@ impl Orchestrator {
         // SignerService is the same one TenantRegistry used to
         // derive `public_key_hex` at startup, so the sig verifies
         // against the embedded pubkey.
-        let signer = themis_evidence::signer::SignerService::for_tenant(tenant_id)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "SignerService::for_tenant({tenant_id}) failed at sign time: {e}"
-                )
+        let signer =
+            themis_evidence::signer::SignerService::for_tenant(tenant_id).unwrap_or_else(|e| {
+                panic!("SignerService::for_tenant({tenant_id}) failed at sign time: {e}")
             });
         let canonical_payload = packet
             .to_canonical_json()
@@ -451,9 +447,8 @@ impl Orchestrator {
         // of the SignedPacket (which is what the PDF already
         // embeds) so JSON verifier and PDF renderer both trust
         // the same bytes.
-        let payload = serde_json::to_string(&signed.packet).map_err(|e| {
-            OrchestratorError::Evidence(format!("serialize packet for seal: {e}"))
-        })?;
+        let payload = serde_json::to_string(&signed.packet)
+            .map_err(|e| OrchestratorError::Evidence(format!("serialize packet for seal: {e}")))?;
 
         // Acquire the per-tenant EvidenceService, seal, return.
         let mut map = evidence_lock.lock().await;
@@ -625,8 +620,7 @@ mod tests {
         // 8 agents → 8 decisions in the chain.
         assert_eq!(sp.packet.agent_decisions.len(), 8);
         // Public key matches stark's real pubkey (from SignerService).
-        let stark_signer =
-            themis_evidence::signer::SignerService::for_tenant("stark").unwrap();
+        let stark_signer = themis_evidence::signer::SignerService::for_tenant("stark").unwrap();
         assert_eq!(sp.public_key_hex, stark_signer.public_key_hex());
         // Framework mappings all true.
         assert_eq!(sp.packet.framework_mappings.coverage_count(), 7);
