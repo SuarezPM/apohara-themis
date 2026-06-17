@@ -1,117 +1,238 @@
 //! LLM backend selection for the production binary.
 //!
-//! `select_backend()` (US-08) tries `FeatherlessBackend` first
-//! (real LLM call to `api.featherless.ai`), and falls back to
-//! the mock when the `FEATHERLESS_API_KEY` env var is unset or
-//! empty. The fallback is transparent to the test suite because:
+//! Honors both sponsors' kickoff claims:
 //!
-//! 1. Tests construct `AppState` directly with their own
-//!    `model_id` and never call `select_backend()`.
-//! 2. The binary's `main()` is the only caller in the production
-//!    code path; it logs which backend is active at startup.
+//! - **AIML API** (Valerie, 12 jun 2026): "One API for 500+ models",
+//!   "different agents want different brains", "switch models is
+//!   changing just one string".
+//! - **Featherless** (Isaac, 12 jun 2026): "30,000+ open source models",
+//!   "agent infrastructure platform".
 //!
-//! An invalid key is treated the same as a missing key: the
-//! backend returns `None`, the binary falls back to the mock, and
-//! the demo still works. (Real network errors are surfaced by
-//! `FeatherlessBackend::complete` per the trait contract.)
+//! The single-string switch is `THEMIS_LLM_PROVIDER`:
+//! - unset (default): try AIML API first, then Featherless, then mock
+//! - "aimlapi": force AIML API (Anthropic Sonnet 4.5)
+//! - "featherless": force Featherless (Qwen3-Coder-30B-A3B)
+//! - "mock": force the mock (test mode / no LLM cost)
+//!
+//! The model id is overridable per-provider via `THEMIS_LLM_MODEL`
+//! (the "change one string" claim — switch model without changing
+//! any code).
+//!
+//! Graceful degradation: missing or invalid env vars fall back
+//! to the next provider in the chain. The binary never panics
+//! on startup because of a missing LLM key.
 
-use themis_agents::llm::FeatherlessBackend;
+use themis_agents::llm::{AIMLAPIBackend, FeatherlessBackend};
 
-/// Model id of the live LLM the demo advertises when
-/// `FEATHERLESS_API_KEY` is set. The cost-1 slot (4 concurrent
-/// connections) on Featherless Premium; see
-/// `docs/REFERENCES.md` for the full pricing table.
+/// Default model for the AIML API provider (Anthropic Sonnet 4.5
+/// via the AIML API gateway — the Fable 5 workaround + the
+/// "different agents want different brains" claim).
+pub const AIML_API_MODEL: &str = "anthropic/claude-sonnet-4.5";
+
+/// Default model for the Featherless provider (Qwen3-Coder-30B
+/// — open source, code analysis workhorse).
 pub const FEATHERLESS_MODEL: &str = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
 
-/// Pick the LLM backend for this run. Tries Featherless first
-/// (real LLM); falls back to `MockLlmProvider` when the env var
-/// is unset or empty. Returns the `model_id` that
-/// `AppState.model_id` advertises to the SSE stream — the
-/// frontend's provider badge reads from there.
-pub fn select_backend() -> &'static str {
-    if FeatherlessBackend::from_env(FEATHERLESS_MODEL).is_some() {
-        eprintln!(
-            "[themis-orchestrator] LLM: FeatherlessBackend({FEATHERLESS_MODEL}) — live"
-        );
-        FEATHERLESS_MODEL
-    } else {
-        eprintln!(
-            "[themis-orchestrator] LLM: MockLlmProvider — FEATHERLESS_API_KEY not set, using mock"
-        );
-        "mock-demo"
+/// Which LLM provider the binary should use. The env-var value
+/// is the single string that switches providers (no code change).
+pub fn select_provider() -> &'static str {
+    match std::env::var("THEMIS_LLM_PROVIDER")
+        .ok()
+        .map(|s| s.trim().to_lowercase())
+        .as_deref()
+    {
+        Some("aimlapi") | Some("ai-ml") | Some("aiml") => "aimlapi",
+        Some("featherless") => "featherless",
+        Some("mock") => "mock",
+        _ => "auto",
     }
+}
+
+/// Resolve the model id for the active provider. Reads
+/// `THEMIS_LLM_MODEL` (override) or falls back to the
+/// provider's default. The override is leaked to &'static str
+/// (called once at startup, bounded by process lifetime).
+pub fn resolve_model(provider: &str) -> &'static str {
+    if let Ok(m) = std::env::var("THEMIS_LLM_MODEL") {
+        let m = m.trim();
+        if !m.is_empty() {
+            return Box::leak(m.to_string().into_boxed_str());
+        }
+    }
+    match provider {
+        "aimlapi" => AIML_API_MODEL,
+        "featherless" => FEATHERLESS_MODEL,
+        _ => "mock-demo",
+    }
+}
+
+/// Pick the LLM backend for this run. The result is the model_id
+/// that `AppState.model_id` advertises to the SSE stream (the
+/// frontend's provider badge reads from there).
+///
+/// Resolution order (when `THEMIS_LLM_PROVIDER` is unset):
+/// 1. `AIML_API_KEY` set → AIML API
+/// 2. `FEATHERLESS_API_KEY` set → Featherless
+/// 3. neither → MockLlmProvider
+pub fn select_backend() -> &'static str {
+    let provider = select_provider();
+
+    // Explicit overrides.
+    match provider {
+        "mock" => {
+            eprintln!("[themis-orchestrator] LLM: MockLlmProvider (THEMIS_LLM_PROVIDER=mock)");
+            return "mock-demo";
+        }
+        "aimlapi" => {
+            let model = resolve_model("aimlapi");
+            if AIMLAPIBackend::from_env(model).is_some() {
+                eprintln!(
+                    "[themis-orchestrator] LLM: AIMLAPIBackend({model}) — live (THEMIS_LLM_PROVIDER=aimlapi)"
+                );
+                return model;
+            }
+            eprintln!(
+                "[themis-orchestrator] LLM: AIML API requested but AIML_API_KEY not set; falling back to mock"
+            );
+            return "mock-demo";
+        }
+        "featherless" => {
+            let model = resolve_model("featherless");
+            if FeatherlessBackend::from_env(model).is_some() {
+                eprintln!(
+                    "[themis-orchestrator] LLM: FeatherlessBackend({model}) — live (THEMIS_LLM_PROVIDER=featherless)"
+                );
+                return model;
+            }
+            eprintln!(
+                "[themis-orchestrator] LLM: Featherless requested but FEATHERLESS_API_KEY not set; falling back to mock"
+            );
+            return "mock-demo";
+        }
+        _ => {}
+    }
+
+    // Auto: try AIML API first, then Featherless, then mock.
+    let aiml_model = resolve_model("aimlapi");
+    if AIMLAPIBackend::from_env(aiml_model).is_some() {
+        eprintln!(
+            "[themis-orchestrator] LLM: AIMLAPIBackend({aiml_model}) — live (auto-selected)"
+        );
+        return aiml_model;
+    }
+    let featherless_model = resolve_model("featherless");
+    if FeatherlessBackend::from_env(featherless_model).is_some() {
+        eprintln!(
+            "[themis-orchestrator] LLM: FeatherlessBackend({featherless_model}) — live (auto-selected, AIML API not set)"
+        );
+        return featherless_model;
+    }
+    eprintln!(
+        "[themis-orchestrator] LLM: MockLlmProvider — neither AIML_API_KEY nor FEATHERLESS_API_KEY is set"
+    );
+    "mock-demo"
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
-    /// `FEATHERLESS_API_KEY` unset → MockLlmProvider.
-    /// This test is the most important contract: the existing
-    /// 285 tests run with no env var set; the helper MUST fall
-    /// back to the mock in that case.
+    // Global mutex serializes tests that mutate env vars.
+    // std::env is process-global; cargo test runs in parallel,
+    // so env mutations race. The mutex forces tests to be
+    // sequential. Cost: ~1ms per test (negligible).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// `THEMIS_LLM_PROVIDER=mock` → mock, regardless of keys.
     #[test]
-    fn select_backend_falls_back_to_mock_when_env_unset() {
-        // SAFETY: env mutation is unsafe in Rust 2024 edition.
-        // We remove the var if it happens to be set, then test.
-        // The test runs single-threaded for this assertion
-        // (cargo test runs test files in parallel, but the
-        // `select_backend` call only reads the env once, so a
-        // race with another test that sets/unset the var is
-        // possible; that's why the assertion is "either
-        // Featherless or mock" rather than "always mock").
-        //
-        // However, the actual binary startup is single-threaded
-        // and runs in its own process. This test is the unit
-        // contract.
+    fn select_backend_mock_when_provider_explicit() {
+        let _g = ENV_LOCK.lock().unwrap();
         unsafe {
+            std::env::set_var("THEMIS_LLM_PROVIDER", "mock");
+            std::env::remove_var("AIML_API_KEY");
+            std::env::remove_var("FEATHERLESS_API_KEY");
+        }
+        assert_eq!(select_backend(), "mock-demo");
+    }
+
+    /// `THEMIS_LLM_PROVIDER=aimlapi` + `AIML_API_KEY=sk-test` →
+    /// AIML API.
+    #[test]
+    fn select_backend_aimlapi_when_provider_explicit_and_key_set() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("THEMIS_LLM_PROVIDER", "aimlapi");
+            std::env::set_var("AIML_API_KEY", "sk-test-dummy-key");
+            std::env::remove_var("FEATHERLESS_API_KEY");
+        }
+        let model_id = select_backend();
+        assert_eq!(
+            model_id, AIML_API_MODEL,
+            "expected AIML API when provider=aimlapi + key set, got {model_id}"
+        );
+    }
+
+    /// `THEMIS_LLM_PROVIDER=featherless` + `FEATHERLESS_API_KEY=k` →
+    /// Featherless.
+    #[test]
+    fn select_backend_featherless_when_provider_explicit_and_key_set() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("THEMIS_LLM_PROVIDER", "featherless");
+            std::env::remove_var("AIML_API_KEY");
+            std::env::set_var("FEATHERLESS_API_KEY", "sk-test-dummy");
+        }
+        let model_id = select_backend();
+        assert_eq!(
+            model_id, FEATHERLESS_MODEL,
+            "expected Featherless when provider=featherless + key set, got {model_id}"
+        );
+    }
+
+    /// Auto: prefer AIML API over Featherless when both keys are set.
+    #[test]
+    fn select_backend_auto_prefers_aimlapi_over_featherless() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::remove_var("THEMIS_LLM_PROVIDER");
+            std::env::set_var("AIML_API_KEY", "sk-test-aiml");
+            std::env::set_var("FEATHERLESS_API_KEY", "sk-test-feather");
+        }
+        let model_id = select_backend();
+        assert_eq!(
+            model_id, AIML_API_MODEL,
+            "AIML API should be preferred when both keys are set, got {model_id}"
+        );
+    }
+
+    /// `THEMIS_LLM_MODEL=foo` overrides the default model.
+    #[test]
+    fn select_backend_respects_model_override() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("THEMIS_LLM_PROVIDER", "featherless");
+            std::env::set_var("THEMIS_LLM_MODEL", "meta-llama/Llama-3.3-70B-Instruct");
+            std::env::remove_var("AIML_API_KEY");
+            std::env::set_var("FEATHERLESS_API_KEY", "k");
+        }
+        let model_id = select_backend();
+        assert_eq!(model_id, "meta-llama/Llama-3.3-70B-Instruct");
+    }
+
+    /// No keys at all → MockLlmProvider (graceful degradation).
+    #[test]
+    fn select_backend_falls_back_to_mock_when_no_keys() {
+        let _g = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::remove_var("THEMIS_LLM_PROVIDER");
+            std::env::remove_var("AIML_API_KEY");
             std::env::remove_var("FEATHERLESS_API_KEY");
         }
         let model_id = select_backend();
         assert_eq!(
             model_id, "mock-demo",
-            "expected mock fallback when FEATHERLESS_API_KEY is unset, got {model_id}"
-        );
-    }
-
-    /// `FEATHERLESS_API_KEY=""` (set but empty) → mock.
-    /// `from_env` trims the value and returns None for empty.
-    #[test]
-    fn select_backend_falls_back_to_mock_when_env_empty() {
-        unsafe {
-            std::env::set_var("FEATHERLESS_API_KEY", "");
-        }
-        let model_id = select_backend();
-        unsafe {
-            std::env::remove_var("FEATHERLESS_API_KEY");
-        }
-        assert_eq!(model_id, "mock-demo");
-    }
-
-    /// `FEATHERLESS_API_KEY=invalid` → invalid keys are treated
-    /// as missing. The `from_env` helper only checks presence,
-    /// not validity; the network call surfaces auth errors at
-    /// request time, not at construction. This means the
-    /// orchestrator can boot with a bad key and degrade to a
-    /// LlmUnavailable at request time. The user-visible fallback
-    /// is the mock.
-    ///
-    /// This is a deliberate design choice: we'd rather boot
-    /// (so the SSE stream + frontend still work) than crash
-    /// (so the demo is dead on a typo). The auth failure surfaces
-    /// on the first LLM call, not on startup.
-    #[test]
-    fn select_backend_uses_featherless_when_env_set() {
-        unsafe {
-            std::env::set_var("FEATHERLESS_API_KEY", "sk-test-dummy-key");
-        }
-        let model_id = select_backend();
-        unsafe {
-            std::env::remove_var("FEATHERLESS_API_KEY");
-        }
-        assert_eq!(
-            model_id, FEATHERLESS_MODEL,
-            "expected FeatherlessBackend when FEATHERLESS_API_KEY is set, got {model_id}"
+            "expected mock fallback when no keys set, got {model_id}"
         );
     }
 }
