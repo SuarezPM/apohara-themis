@@ -32,6 +32,7 @@ pub fn version() -> &'static str {
 }
 
 pub mod events;
+pub mod featherless_openclaw;
 pub mod fixtures;
 pub mod http;
 pub mod llm_backend;

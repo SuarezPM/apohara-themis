@@ -23,6 +23,7 @@ hex = "0.4"
 themis-agents = { workspace = true }
 themis-evidence = { workspace = true }
 themis-compliance = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 themis-frontend = { workspace = true }
 axum = { version = "0.7", features = ["macros"] }
 tower = "0.5"
