@@ -9,3 +9,6 @@ repository.workspace = true
 description = "THEMIS demo UI — vanilla HTML+JS for themis.apohara.dev. EventSource-driven live counter, BAAAR HALT overlay, compliance dashboard. Embedded into themis-orchestrator via include_dir!."
 
 [dependencies]
+
+[dev-dependencies]
+serde_json = "1"

@@ -45,6 +45,10 @@ pub mod room;
 pub mod state;
 pub mod tenants;
 
+/// A2A 1.0 (Google Agent2Agent) JSON-RPC 2.0 endpoint. Story
+/// C-01 / G24-G26. See `a2a_handler.rs` for the full surface.
+pub mod a2a_handler;
+
 // `test_support` is shared between the integration test
 // (tests/demo_data_loads.rs) and the bench binary. Cargo's
 // `cfg(test)` only covers the lib's `#[cfg(test)] mod tests`, not

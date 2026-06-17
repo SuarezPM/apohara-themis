@@ -41,6 +41,16 @@ pub const APP_CSS: &str = include_str!("../static/app.css");
 /// overlay, evidence download).
 pub const APP_JS: &str = include_str!("../static/app.js");
 
+/// A2A 1.0 agent card (Google Agent2Agent protocol, served at
+/// `/.well-known/agent-card.json` so external peers can discover
+/// the orchestrator). Story C-01 / G26.
+pub const AGENT_CARD_JSON: &str =
+    include_str!("../static/.well-known/agent-card.json");
+
+/// Machine-readable list of all 6 agents in the orchestrator's
+/// fleet, served at `/agents.json`. Story C-01 / G25.
+pub const AGENTS_JSON: &str = include_str!("../static/agents.json");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,6 +58,44 @@ mod tests {
     #[test]
     fn version_returns_crate_name() {
         assert_eq!(version(), "themis-frontend");
+    }
+
+    /// A2A 1.0 agent card validity (Story C-01 / G26). The
+    /// shipped card must declare `protocolVersion: "1.0"`,
+    /// expose at least one skill, and list an authentication
+    /// scheme — these are the three required fields a
+    /// peer validator checks before dispatching a request.
+    #[test]
+    fn agent_card_validates_against_a2a_1_0() {
+        let v: serde_json::Value = serde_json::from_str(AGENT_CARD_JSON)
+            .expect("agent card must be valid JSON");
+        assert_eq!(v["protocolVersion"], "1.0");
+        assert_eq!(v["name"], "THEMIS Orchestrator");
+        let skills = v["skills"].as_array().expect("skills array");
+        assert!(!skills.is_empty(), "at least one skill required");
+        let auth = &v["authentication"];
+        assert!(
+            auth.get("schemes").and_then(|s| s.as_array()).is_some(),
+            "authentication.schemes must be an array"
+        );
+    }
+
+    /// `agents.json` must list at least 6 agents (the
+    /// orchestrator coordinator + 5 production agents + the
+    /// new 3.0.0 honesty-auditor) so external registries can
+    /// pin the fleet size (Story C-01 / G25). The shipped
+    /// registry has 7 entries (the orchestrator + 6
+    /// specialists); future commits may append.
+    #[test]
+    fn agents_json_lists_six_agents() {
+        let v: serde_json::Value =
+            serde_json::from_str(AGENTS_JSON).expect("agents.json must be valid JSON");
+        let agents = v["agents"].as_array().expect("agents array");
+        assert!(
+            agents.len() >= 6,
+            "expected at least 6 agents, got {}",
+            agents.len()
+        );
     }
 
     #[test]

@@ -32,6 +32,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use crate::events::{Event, EventBus};
 use crate::fixtures::load_all;
 use crate::orchestrator::Orchestrator;
+use crate::a2a_handler;
 use crate::packet::SignedPacket;
 use crate::pdf;
 use crate::tenants::RoomId;
@@ -149,6 +150,17 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/rooms/:room_id/transcript", get(get_room_transcript))
         .route("/aibom", get(get_aibom))
+        // A2A 1.0 discovery (Story C-01 / G24-G26). The
+        // `/.well-known/agent-card.json` route serves the
+        // A2A-protocol-compliant card; `/agents.json` lists the
+        // 6 agents in the fleet; `POST /a2a` accepts JSON-RPC
+        // 2.0 envelopes. See `a2a_handler.rs` for the surface.
+        .route(
+            "/.well-known/agent-card.json",
+            get(a2a_handler::get_agent_card),
+        )
+        .route("/agents.json", get(a2a_handler::get_agents_json))
+        .route("/a2a", axum::routing::post(a2a_handler::post_a2a))
         .with_state(state)
 }
 
@@ -935,6 +947,7 @@ mod tests {
 /// build time; the live endpoint serves a snapshot (top-level
 /// metadata + 1-2 evidence properties) so a judge can curl it
 /// from the demo URL.
+#[allow(clippy::items_after_test_module)]
 async fn get_aibom() -> Response {
     Json(json!({
         "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",

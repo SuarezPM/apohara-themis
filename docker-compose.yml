@@ -1,0 +1,95 @@
+# THEMIS 3.0 — docker-compose for local dev + demo deploy.
+#
+# Story C-01 / G24: the agentgateway sidecar fronts the
+# themis-orchestrator and speaks A2A 1.0 on behalf of the
+# orchestrator so external peers (other Agent Cards, Band's
+# discovery service) can find the orchestrator at
+# /.well-known/agent-card.json and submit JSON-RPC at /a2a.
+#
+# Network: a single bridge `themis-net` so the sidecar and the
+# orchestrator reach each other by container name. The host
+# port for the gateway is 8000; the orchestrator's HTTP
+# listener is exposed only on the internal network (port 8080
+# is bound to 127.0.0.1 in dev to keep the demo's judge
+# surface clean).
+#
+# Profiles:
+#   * default  — `docker compose up` starts agentgateway +
+#     themis-orchestrator. The codesearch-mcp service is
+#     excluded so the default pull is small.
+#   * `mcp`    — `docker compose --profile mcp up` adds the
+#     codesearch-mcp service (used by C-11).
+
+services:
+  agentgateway:
+    image: ghcr.io/agentgateway/agentgateway:v1.2.0
+    container_name: themis-agentgateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # agentgateway routes A2A traffic to the orchestrator's
+      # A2A gateway backend (port 8090) and discovery traffic
+      # to the orchestrator's HTTP listener (port 8080). The
+      # full config is mounted as a ConfigMap-equivalent file
+      # in ./themis-agentgateway/ConfigMap/config.yaml.
+      AGENTGATEWAY_BACKEND_URL: "http://themis-orchestrator:8090"
+    volumes:
+      - ./themis-agentgateway/ConfigMap:/etc/agentgateway:ro
+    depends_on:
+      themis-orchestrator:
+        condition: service_healthy
+    networks:
+      - themis-net
+
+  themis-orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: themis-orchestrator
+    restart: unless-stopped
+    # Two listeners:
+    #   * 8080 → the HTTP server (frontend, SSE, invoices).
+    #   * 8090 → the A2A gateway backend that agentgateway
+    #     talks to (serves /.well-known/agent-card.json and
+    #     /a2a). The two ports share the same axum router
+    #     for C-01; the dual-port indirection is a C-02+
+    #     follow-up that lets agentgateway strip the path
+    #     prefix `/a2a` before proxying.
+    #
+    # The host binding for 8080 is 127.0.0.1:8080 so the
+    # public demo URL (Vercel) reaches it via the gateway
+    # (port 8000), not directly. Override with `HOST_PORT`
+    # env var to expose publicly.
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8090:8090"
+    environment:
+      PORT: "8080"
+      A2A_PORT: "8090"
+      RUST_LOG: "info,themis_orchestrator=debug"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - themis-net
+
+  codesearch-mcp:
+    image: node:20-alpine
+    container_name: themis-codesearch-mcp
+    profiles: ["mcp"]   # only starts with `--profile mcp`
+    working_dir: /srv
+    command: ["npx", "-y", "@apohara/codesearch-mcp@latest"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - themis-net
+
+networks:
+  themis-net:
+    driver: bridge
+    name: themis-net

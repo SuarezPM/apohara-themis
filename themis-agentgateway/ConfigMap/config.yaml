@@ -1,0 +1,84 @@
+# THEMIS 3.0 — agentgateway sidecar configuration.
+#
+# Story C-01 / G24-G26. The Solo.io agentgateway is a
+# purpose-built LLM-aware proxy; in C-01 we only use its
+# A2A 1.0 filter so external peers (Google's Agent2Agent
+# reference impl, Band's discovery service, custom MCP
+# clients) can discover THEMIS and submit JSON-RPC.
+#
+# Reference: https://agentgateway.dev/docs/
+#
+# Minimal viable config:
+#   * Listen on :8000.
+#   * Enable the A2A filter (the gateway understands the
+#     A2A 1.0 envelope and forwards `message/send`,
+#     `tasks/get`, and `agent/authenticatedExtendedCard`
+#     to the backend).
+#   * Two backends: `/.well-known/agent-card.json` →
+#     themis-orchestrator:8080 (served from the
+#     themis-frontend static dir); `/a2a` →
+#     themis-orchestrator:8090 (the A2A gateway backend).
+#
+# C-02 (AgentGuard sandbox) is the right home for the
+# `authn` block (Ed25519 bearer verifier); C-01 ships
+# the mock.
+
+listeners:
+  - name: a2a
+    port: 8000
+    protocol: HTTP
+
+backends:
+  - name: themis-discovery
+    host: themis-orchestrator
+    port: 8080
+    # Discovery: agent card + agents.json + everything
+    # under /.well-known/. The gateway strips no path
+    # prefix here.
+    routes:
+      - match:
+          prefix: "/.well-known/"
+        destination:
+          backend: themis-discovery
+      - match:
+          path: "/agents.json"
+        destination:
+          backend: themis-discovery
+
+  - name: themis-a2a-backend
+    host: themis-orchestrator
+    port: 8090
+    # A2A JSON-RPC surface. The gateway enables the
+    # A2A filter on this listener so the spec-compliant
+    # envelope is parsed (and the result streamed) at
+    # the proxy, offloading the orchestrator.
+    routes:
+      - match:
+          prefix: "/a2a"
+        destination:
+          backend: themis-a2a-backend
+        filters:
+          - name: a2a
+            config:
+              # The A2A 1.0 filter: parses JSON-RPC
+              # envelopes, validates `jsonrpc: "2.0"`,
+              # and dispatches method names to the
+              # backend. The C-01 orchestrator
+              # implements `message/send`,
+              # `tasks/get`, and
+              # `agent/authenticatedExtendedCard`.
+              version: "1.0"
+              # Auth is mocked in C-01; C-02 wires the
+              # real Ed25519 bearer verifier.
+              authentication:
+                schemes: ["Ed25519Bearer"]
+                mock: true
+
+# Observability. The gateway emits access logs in the
+# standard Envoy format; the orchestrator's own SSE
+# stream is the source of truth for in-process
+# observability, so we only enable access logs here.
+observability:
+  access_log:
+    enabled: true
+    format: "json"
