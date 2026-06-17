@@ -11,6 +11,7 @@ pub mod framework;
 pub mod iso_42001;
 pub mod nist_ai_rmf;
 pub mod owasp_agentic;
+pub mod sarif_merge;
 pub mod service;
 
 /// Crate version + name.
