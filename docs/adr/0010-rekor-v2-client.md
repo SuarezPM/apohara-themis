@@ -38,9 +38,11 @@ ecosystem has moved. Bumping now avoids a forced bump in two PRs.
 
 `sigstore-protobuf-specs` is **not** pinned as a runtime dep. The proto
 files are vendored at `crates/themis-evidence/proto/rekor/v2/{tracing,
-crypto}.proto` and the vendored copy pins the `v2.0.0-beta.X` tag of
-`sigstore/protobuf-specs` (concrete tag to be chosen when the first client
-impl lands; open question for Pablo).
+crypto}.proto` and the vendored copy pins the **`v0.5.1`** tag of
+`sigstore/protobuf-specs` (verified 2026-06-17, latest stable). The "v2"
+in the marketing claim refers to the *Rekor transparency log v2 service
+shape*, not to a `2.0.0` spec tag — the protobuf-specs repo uses
+`0.5.x` as its version line for the v2 surface.
 
 ### Why not the alternatives
 
