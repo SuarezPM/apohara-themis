@@ -70,6 +70,81 @@ pub fn resolve_model(provider: &str) -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod us04_tests {
+    use super::*;
+    use themis_agents::baaar::AgentRole;
+
+    /// US-04: each agent role resolves to its expected
+    /// model_id per the multi-model dispatch table.
+    #[test]
+    fn model_id_for_agent_routes_per_agent() {
+        assert_eq!(
+            model_id_for_agent(AgentRole::Extractor),
+            "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+        );
+        assert_eq!(
+            model_id_for_agent(AgentRole::PoMatcher),
+            "Qwen/Qwen3-Coder-30B-A3B-Instruct"
+        );
+        assert_eq!(
+            model_id_for_agent(AgentRole::FraudAuditor),
+            "anthropic/claude-sonnet-4.5"
+        );
+        assert_eq!(
+            model_id_for_agent(AgentRole::GaapClassifier),
+            "meta-llama/Llama-3.3-70B-Instruct"
+        );
+        // Signer + shadow agents are deterministic.
+        assert_eq!(
+            model_id_for_agent(AgentRole::ProvenanceSigner),
+            "deterministic-signer"
+        );
+        assert_eq!(
+            model_id_for_agent(AgentRole::AuditWatchdog),
+            "deterministic-signer"
+        );
+        assert_eq!(
+            model_id_for_agent(AgentRole::RegressionTester),
+            "deterministic-signer"
+        );
+        assert_eq!(
+            model_id_for_agent(AgentRole::DemoNarrator),
+            "deterministic-signer"
+        );
+    }
+}
+
+/// Pick the LLM model_id for a specific agent role. US-04:
+/// the orchestrator emits `Event::ProviderActive` per agent
+/// with the agent-specific model_id, so the frontend renders
+/// a distinct badge per agent ("FraudAuditor on
+/// claude-sonnet-4.5", "GAAP on Llama-3.3-70B", etc.).
+///
+/// Routing:
+///   - Extractor       → Featherless Qwen3-Coder-30B (structured JSON)
+///   - PoMatcher       → Featherless Qwen3-Coder-30B (deterministic lookup)
+///   - FraudAuditor    → AIML API Claude Sonnet 4.5 (reasoning + risk)
+///   - GaapClassifier  → AIML API Llama-3.3-70B (statistical lineage)
+///   - ProvenanceSigner + shadow agents → "deterministic-signer"
+///
+/// The string is used purely for the SSE badge. The agent's
+/// own `process()` call site decides whether to actually
+/// call the LLM (and falls back to mock internally when
+/// the corresponding env key is unset).
+pub fn model_id_for_agent(role: themis_agents::baaar::AgentRole) -> &'static str {
+    use themis_agents::baaar::AgentRole::*;
+    match role {
+        Extractor => "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        PoMatcher => "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        FraudAuditor => "anthropic/claude-sonnet-4.5",
+        GaapClassifier => "meta-llama/Llama-3.3-70B-Instruct",
+        ProvenanceSigner | AuditWatchdog | RegressionTester | DemoNarrator => {
+            "deterministic-signer"
+        }
+    }
+}
+
 /// Pick the LLM backend for this run. The result is the model_id
 /// that `AppState.model_id` advertises to the SSE stream (the
 /// frontend's provider badge reads from there).

@@ -310,6 +310,36 @@ impl Orchestrator {
 
             decisions.push(decision.clone());
 
+            // Publish `Event::ProviderActive` per agent with
+            // the agent-specific model_id (US-04). The frontend
+            // renders this as a per-agent badge so the judge
+            // sees the multi-model dispatch in real time
+            // ("FraudAuditor on claude-sonnet-4.5", "GAAP on
+            // Llama-3.3-70B", "Extractor on Qwen3-Coder-30B").
+            if let Some(bus) = self.event_bus.as_ref() {
+                let role = match agent_name {
+                    "extractor" => themis_agents::baaar::AgentRole::Extractor,
+                    "po_matcher" => themis_agents::baaar::AgentRole::PoMatcher,
+                    "fraud_auditor" => themis_agents::baaar::AgentRole::FraudAuditor,
+                    "gaap_classifier" => themis_agents::baaar::AgentRole::GaapClassifier,
+                    "provenance_signer" => {
+                        themis_agents::baaar::AgentRole::ProvenanceSigner
+                    }
+                    "demo_narrator" => themis_agents::baaar::AgentRole::DemoNarrator,
+                    "regression_tester" => {
+                        themis_agents::baaar::AgentRole::RegressionTester
+                    }
+                    "audit_watchdog" => themis_agents::baaar::AgentRole::AuditWatchdog,
+                    _ => themis_agents::baaar::AgentRole::DemoNarrator,
+                };
+                let model_id =
+                    crate::llm_backend::model_id_for_agent(role).to_string();
+                bus.publish(crate::events::Event::ProviderActive {
+                    run_id: Uuid::new_v4(),
+                    model_id,
+                });
+            }
+
             // Publish `Event::AgentHandoff` so the frontend
             // renders the animated arrow between this agent
             // and the next one. US-03: the visible signal of

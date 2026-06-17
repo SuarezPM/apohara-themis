@@ -941,3 +941,119 @@ async fn e2e_agent_handoff_events_emitted_in_order() {
         );
     }
 }
+
+/// US-04: per-agent multi-model dispatch. The orchestrator
+/// must emit `Event::ProviderActive` with the agent-specific
+/// model_id for each of the 5 main agents. The bus must carry
+/// at least one `claude-sonnet-4.5` (FraudAuditor), at least
+/// one `Llama-3.3-70B` (GaapClassifier), and at least one
+/// `Qwen3-Coder-30B` (Extractor / PoMatcher).
+#[tokio::test]
+async fn multi_model_dispatch_routes_per_agent() {
+    use std::collections::HashSet;
+    use themis_orchestrator::events::Event;
+    let f = load_fixture("wayne-002.json");
+    let mock_llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(
+        MockLlmProvider::new("e2e-dispatch-mock")
+            .with_response(
+                &f.invoice_id,
+                LlmResponse {
+                    text: serde_json::to_string(&f.extracted).unwrap(),
+                    input_tokens: 256,
+                    output_tokens: 128,
+                    model_id: "e2e-dispatch-mock".to_string(),
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
+            .with_response(
+                "assess_fraud_risk",
+                LlmResponse {
+                    text: serde_json::json!({
+                        "assessment": {
+                            "risk_score": 0.1,
+                            "findings": [],
+                            "coherence_score": 0.9,
+                            "debate_rounds": 1,
+                            "explicit_halt": false,
+                        },
+                        "outcome": "approve",
+                    })
+                    .to_string(),
+                    input_tokens: 256,
+                    output_tokens: 64,
+                    model_id: "e2e-dispatch-mock".to_string(),
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
+            .with_default(LlmResponse {
+                text: serde_json::json!({"stub":"ok"}).to_string(),
+                input_tokens: 64,
+                output_tokens: 32,
+                model_id: "e2e-dispatch-mock".to_string(),
+                finish_reason: themis_agents::llm::FinishReason::Stop,
+            }),
+    );
+    let agents =
+        themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
+    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
+    let tenants = Arc::new(TenantRegistry::with_default_tenants());
+    let bus = Arc::new(themis_orchestrator::events::EventBus::new(64));
+    let mut rx = bus.subscribe();
+    let orch = Orchestrator::new_with_rekor(
+        rooms,
+        agents,
+        tenants,
+        Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
+    )
+    .with_event_bus(bus.clone());
+    let state = AppState {
+        orchestrator: Arc::new(tokio::sync::Mutex::new(orch)),
+        event_bus: bus,
+        compliance: Arc::new(themis_compliance::service::ComplianceService::new()),
+        reports: dashmap::DashMap::new(),
+        packets: dashmap::DashMap::new(),
+        sealed: dashmap::DashMap::new(),
+        model_id: mock_llm.model_id().to_string(),
+        band_room: None,
+        sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+    };
+    let app = build_router(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/invoices")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"tenant_id":"wayne","invoice_id":"dispatch-001","raw_b64":""}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Drain the bus and collect the ProviderActive model_ids.
+    let mut models: HashSet<String> = HashSet::new();
+    for _ in 0..64 {
+        match rx.try_recv() {
+            Ok(Event::ProviderActive { model_id, .. }) => {
+                models.insert(model_id);
+            }
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    // The 3 distinct model IDs per the dispatch table.
+    assert!(
+        models.iter().any(|m| m.contains("claude-sonnet-4.5")),
+        "FraudAuditor model_id not in bus: {models:?}"
+    );
+    assert!(
+        models.iter().any(|m| m.contains("Llama-3.3-70B")),
+        "GaapClassifier model_id not in bus: {models:?}"
+    );
+    assert!(
+        models.iter().any(|m| m.contains("Qwen3-Coder-30B")),
+        "Extractor/PoMatcher model_id not in bus: {models:?}"
+    );
+}
