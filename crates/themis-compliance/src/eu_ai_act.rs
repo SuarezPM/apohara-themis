@@ -4,10 +4,91 @@
 //! The 8 Art 12 fields match the dashboard at `/compliance`. We
 //! also populate 1 Art 26 field (deployer name) for a total of 9
 //! fields — AC15 (>=7/8 Art 12 populated) is satisfied with margin.
+//!
+//! US-07: Art 73 incident reporting. When the BAAAR HALT fires,
+//! the orchestrator generates an `IncidentReport` with the
+//! severity-derived reporting window and emits it on the SSE
+//! bus as `Event::IncidentReported`. The window is:
+//!   - CRITICAL → 24 hours
+//!   - HIGH     → 72 hours
+//!   - MEDIUM   → 360 hours (15 days)
+//!   - other    → 360 hours
 
 use crate::framework::EvidencePacket;
 
 use crate::framework::{ComplianceMap, ComplianceMapper, Framework};
+
+/// Severity of an EU AI Act Art 73 incident. Drives the
+/// reporting-window calculation in `reporting_window_for`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IncidentSeverity {
+    /// 24-hour reporting window. The most urgent class;
+    /// reserved for events that pose an immediate risk to
+    /// fundamental rights.
+    Critical,
+    /// 72-hour reporting window. The DORA Art 17 default
+    /// — THEMIS uses this for `BaaarReason::RiskScoreExceeded`
+    /// and `BaaarReason::SecretLeakDetected`.
+    High,
+    /// 15-day reporting window. Lower-severity events that
+    /// still require notification.
+    Medium,
+    /// Default for any other incident class.
+    Low,
+}
+
+/// A single EU AI Act Art 73 incident report. Emitted by
+/// the orchestrator when the BAAAR HALT fires. The
+/// `reporting_window_hours` is derived from `severity` via
+/// `reporting_window_for`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct IncidentReport {
+    /// Severity classification.
+    pub severity: IncidentSeverity,
+    /// Unix epoch ms when the incident was detected (the
+    /// BAAAR HALT timestamp).
+    pub timestamp: i64,
+    /// Human-readable narrative ("secret leak detected on
+    /// line 47 of vendor-invoice-0012", etc.).
+    pub narrative: String,
+    /// Reporting window in hours (24/72/360). Derived
+    /// from severity; the orchestrator fills it before
+    /// publishing the event.
+    pub reporting_window_hours: u32,
+    /// Tenant id (stark, wayne).
+    pub tenant_id: String,
+    /// Run id (UUID v4 hex string; the orchestrator
+    /// formats `Uuid::to_string()` before publishing).
+    pub run_id: String,
+}
+
+/// Map a severity to its EU AI Act Art 73 reporting
+/// window. The mapping is fixed by the regulation:
+/// CRITICAL → 24h, HIGH → 72h, MEDIUM/LOW → 360h.
+pub fn reporting_window_for(severity: IncidentSeverity) -> u32 {
+    match severity {
+        IncidentSeverity::Critical => 24,
+        IncidentSeverity::High => 72,
+        IncidentSeverity::Medium | IncidentSeverity::Low => 360,
+    }
+}
+
+/// Map a BAAAR halt reason to an Art 73 incident severity.
+/// `RiskScoreExceeded` and `SecretLeakDetected` are HIGH
+/// (72h — DORA Art 17 default). The other reasons are
+/// MEDIUM (15 days).
+pub fn severity_for_baaar(reason: &themis_agents::baaar::BaaarReason) -> IncidentSeverity {
+    use themis_agents::baaar::BaaarReason;
+    match reason {
+        BaaarReason::RiskScoreExceeded | BaaarReason::SecretLeakDetected => {
+            IncidentSeverity::High
+        }
+        BaaarReason::CoherenceTooLow
+        | BaaarReason::MaxDebateRoundsReached
+        | BaaarReason::ExplicitHaltRequested => IncidentSeverity::Medium,
+    }
+}
 
 /// Maps an Evidence Packet to EU AI Act's Art 12 + Art 26.
 pub struct EuAiActMapper;

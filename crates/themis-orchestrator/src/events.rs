@@ -132,6 +132,27 @@ pub enum Event {
         /// the context the handoff is passing.
         context_summary: String,
     },
+    /// US-07: EU AI Act Art 73 incident report. Emitted by
+    /// the orchestrator when the BAAAR HALT fires. Carries
+    /// the severity-derived reporting window (24/72/360h)
+    /// so the frontend can render a "report by <deadline>"
+    /// tile and the PDF page 2 (added in US-10) gets the
+    /// Incident Report section.
+    IncidentReported {
+        /// The run id.
+        run_id: Uuid,
+        /// Severity as a stable string ("critical" | "high" |
+        /// "medium" | "low"). Matches the serde tag.
+        severity: String,
+        /// Unix epoch ms when the incident was detected.
+        timestamp_ms: i64,
+        /// Human-readable narrative.
+        narrative: String,
+        /// Reporting window in hours (24/72/360).
+        reporting_window_hours: u32,
+        /// Tenant id (stark, wayne).
+        tenant_id: String,
+    },
     /// Announces the sponsor stack of the current build.
     /// Emitted as the FIRST event on every new SSE connection
     /// so the frontend can render the SponsorStack banner
@@ -196,6 +217,7 @@ impl Event {
             Event::AgentDispute { .. } => "agent_dispute",
             Event::HumanOverride { .. } => "human_override",
             Event::AgentHandoff { .. } => "agent_handoff",
+            Event::IncidentReported { .. } => "incident_reported",
             Event::SponsorStack { .. } => "sponsor_stack",
         }
     }

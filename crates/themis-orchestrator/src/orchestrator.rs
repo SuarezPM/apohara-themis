@@ -400,6 +400,38 @@ impl Orchestrator {
                 if let Outcome::Halt(reason) = outcome {
                     bbaaar_outcome = outcome;
                     sm.transition(Transition::Halt(reason))?;
+                    // US-07: emit EU AI Act Art 73 incident
+                    // report. The severity is derived from
+                    // the BAAAR reason (RiskScoreExceeded +
+                    // SecretLeakDetected = HIGH = 72h;
+                    // others = MEDIUM = 360h). The narrative
+                    // carries the agent name + halt reason
+                    // for the audit log.
+                    if let Some(bus) = self.event_bus.as_ref() {
+                        use themis_compliance::eu_ai_act::{
+                            reporting_window_for, severity_for_baaar, IncidentReport,
+                        };
+                        let severity = severity_for_baaar(&reason);
+                        let report = IncidentReport {
+                            severity,
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                            narrative: format!(
+                                "BAAAR HALT: reason={:?} agent={} tenant={} invoice={}",
+                                reason, agent_name, tenant_id, invoice_id
+                            ),
+                            reporting_window_hours: reporting_window_for(severity),
+                            tenant_id: tenant_id.to_string(),
+                            run_id: Uuid::new_v4().to_string(),
+                        };
+                        bus.publish(crate::events::Event::IncidentReported {
+                            run_id: Uuid::new_v4(),
+                            severity: format!("{:?}", report.severity).to_lowercase(),
+                            timestamp_ms: report.timestamp,
+                            narrative: report.narrative,
+                            reporting_window_hours: report.reporting_window_hours,
+                            tenant_id: report.tenant_id,
+                        });
+                    }
                     break;
                 }
             }

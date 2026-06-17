@@ -172,23 +172,25 @@ mod tests {
     }
 
     #[test]
-    fn all_4_clauses_populated_on_empty_packet() {
-        // ISO 42001 is structural — populated from metadata, not
-        // decisions. Empty packet still gets 4/4 (analogous to DORA
-        // art_9/art_17 on empty packet).
+    fn all_5_clauses_populated_on_empty_packet() {
+        // US-05: 5 fields (was 4 in the v1 plan; the 5th is
+        // Annex A.6 lifecycle stage). ISO 42001 is structural
+        // — populated from metadata, not decisions. Empty
+        // packet still gets 5/5 (analogous to DORA art_9/art_17
+        // on empty packet).
         let m = Iso42001Mapper.map(&EvidencePacket::new(
             "stark",
             "inv-001",
             vec![],
             Outcome::Approve,
         ));
-        assert_eq!(m.populated, 4);
-        assert_eq!(m.total, 4);
+        assert_eq!(m.populated, 5);
+        assert_eq!(m.total, 5);
         assert!((m.coverage_pct() - 1.0).abs() < 0.001);
     }
 
     #[test]
-    fn all_4_clauses_populated_on_well_formed_packet() {
+    fn all_5_clauses_populated_on_well_formed_packet() {
         let m = Iso42001Mapper.map(&EvidencePacket::new(
             "wayne",
             "inv-002",
@@ -199,12 +201,13 @@ mod tests {
             ],
             Outcome::Approve,
         ));
-        assert_eq!(m.populated, 4);
+        assert_eq!(m.populated, 5);
         let field_names: Vec<&str> = m.fields.iter().map(|(n, _)| *n).collect();
         assert!(field_names.contains(&"clause_6_1_risk_assessment"));
         assert!(field_names.contains(&"clause_8_4_impact_assessment"));
         assert!(field_names.contains(&"clause_9_1_monitoring_measurement"));
         assert!(field_names.contains(&"clause_10_2_continual_improvement"));
+        assert!(field_names.contains(&"annex_a_6_lifecycle_stage"));
     }
 
     #[test]

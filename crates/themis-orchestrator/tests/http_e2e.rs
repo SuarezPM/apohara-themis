@@ -1057,3 +1057,124 @@ async fn multi_model_dispatch_routes_per_agent() {
         "Extractor/PoMatcher model_id not in bus: {models:?}"
     );
 }
+
+/// US-07: when the BAAAR HALT fires, the orchestrator must
+/// emit `Event::IncidentReported` with the severity-derived
+/// reporting window. The wayne-002 fixture maps to
+/// `risk_score_exceeded` → HIGH → 72h.
+#[tokio::test]
+async fn incident_reported_event_fires_on_baaar_halt() {
+    use themis_orchestrator::events::Event;
+    // Use stark-002 (a HALT fixture) so the BAAAR gate fires
+    // and the IncidentReported event is published.
+    let f = load_fixture("stark-002.json");
+    let mock_llm: Arc<dyn themis_agents::llm::LlmBackend> = Arc::new(
+        MockLlmProvider::new("e2e-incident-mock")
+            .with_response(
+                &f.invoice_id,
+                LlmResponse {
+                    text: serde_json::to_string(&f.extracted).unwrap(),
+                    input_tokens: 256,
+                    output_tokens: 128,
+                    model_id: "e2e-incident-mock".to_string(),
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
+            .with_response(
+                "assess_fraud_risk",
+                LlmResponse {
+                    text: serde_json::to_string(&f.fraud_assessment).unwrap(),
+                    input_tokens: 256,
+                    output_tokens: 64,
+                    model_id: "e2e-incident-mock".to_string(),
+                    finish_reason: themis_agents::llm::FinishReason::Stop,
+                },
+            )
+            .with_default(LlmResponse {
+                text: serde_json::json!({"stub":"ok"}).to_string(),
+                input_tokens: 64,
+                output_tokens: 32,
+                model_id: "e2e-incident-mock".to_string(),
+                finish_reason: themis_agents::llm::FinishReason::Stop,
+            }),
+    );
+    let agents =
+        themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
+    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
+    let tenants = Arc::new(TenantRegistry::with_default_tenants());
+    let bus = Arc::new(themis_orchestrator::events::EventBus::new(64));
+    let mut rx = bus.subscribe();
+    let orch = Orchestrator::new_with_rekor(
+        rooms,
+        agents,
+        tenants,
+        Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
+    )
+    .with_event_bus(bus.clone());
+    let state = AppState {
+        orchestrator: Arc::new(tokio::sync::Mutex::new(orch)),
+        event_bus: bus,
+        compliance: Arc::new(themis_compliance::service::ComplianceService::new()),
+        reports: dashmap::DashMap::new(),
+        packets: dashmap::DashMap::new(),
+        sealed: dashmap::DashMap::new(),
+        model_id: mock_llm.model_id().to_string(),
+        band_room: None,
+        sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+    };
+    let app = build_router(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/invoices")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"tenant_id":"stark","invoice_id":"incident-001","raw_b64":""}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Drain the bus and look for the incident report.
+    let mut severity_seen: Option<String> = None;
+    let mut window_seen: Option<u32> = None;
+    let mut tenant_seen: Option<String> = None;
+    let mut narrative_seen: Option<String> = None;
+    for _ in 0..64 {
+        match rx.try_recv() {
+            Ok(Event::IncidentReported {
+                severity,
+                reporting_window_hours,
+                tenant_id,
+                narrative,
+                ..
+            }) => {
+                severity_seen = Some(severity);
+                window_seen = Some(reporting_window_hours);
+                tenant_seen = Some(tenant_id);
+                narrative_seen = Some(narrative);
+                break;
+            }
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    let severity = severity_seen.expect("IncidentReported must fire on BAAAR HALT");
+    let window = window_seen.expect("reporting_window_hours must be present");
+    let tenant = tenant_seen.expect("tenant_id must be present");
+    let narrative = narrative_seen.expect("narrative must be present");
+    // risk_score_exceeded is HIGH severity per the
+    // severity_for_baaar mapping → 72h window.
+    assert_eq!(severity, "high", "expected severity=high, got {severity}");
+    assert_eq!(
+        window, 72,
+        "expected 72h window for HIGH severity, got {window}"
+    );
+    assert_eq!(tenant, "stark");
+    assert!(
+        narrative.contains("BAAAR HALT"),
+        "narrative must reference BAAAR HALT: {narrative}"
+    );
+}
