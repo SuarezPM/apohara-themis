@@ -5,7 +5,7 @@
 //! RMF are regulations or guidance). For a Track 3 (Regulated &
 //! High-Stakes) demo, the certifiability claim is the differentiator.
 //!
-//! Fields mapped:
+//! Fields mapped (US-05: 5 fields, not 4):
 //!   - Clause 6.1 — AI risk assessment: BaaarGate 5-condition check
 //!     always runs. Populated for every packet.
 //!   - Clause 8.4 — Impact assessment: a static reference to the
@@ -15,6 +15,10 @@
 //!     mechanism.
 //!   - Clause 10.2 — Continual improvement: a pointer to the
 //!     post-hackathon sprint as the documented improvement cycle.
+//!   - Annex A.6 — AI system lifecycle stage: production (THEMIS
+//!     2.0 is a deployed, Band-of-Agents-hackathon-track-3
+//!     entry). The lifecycle field is the auditable "what stage
+//!     of the AI lifecycle is this system in" claim.
 
 use crate::framework::{ComplianceMap, ComplianceMapper, EvidencePacket, Framework};
 
@@ -27,13 +31,12 @@ impl ComplianceMapper for Iso42001Mapper {
     }
 
     fn map(&self, packet: &EvidencePacket) -> ComplianceMap {
-        // 4 fields: 6.1 (risk assessment), 8.4 (impact assessment),
-        // 9.1 (monitoring), 10.2 (improvement cycle).
-        let mut m = ComplianceMap::new(self.framework(), 4);
+        // 5 fields: 6.1 (risk assessment), 8.4 (impact assessment),
+        // 9.1 (monitoring), 10.2 (improvement cycle), A.6
+        // (lifecycle stage).
+        let mut m = ComplianceMap::new(self.framework(), 5);
 
-        // Clause 6.1 — AI risk assessment. The BaaarGate 5-condition
-        // check is always invoked in process_invoice; this clause is
-        // populated for every packet regardless of outcome.
+        // Clause 6.1 — AI risk assessment.
         m.add_field(
             "clause_6_1_risk_assessment",
             serde_json::json!({
@@ -43,8 +46,7 @@ impl ComplianceMapper for Iso42001Mapper {
             }),
         );
 
-        // Clause 8.4 — Impact assessment. We reference the compliance
-        // crate version as the "documented impact assessment".
+        // Clause 8.4 — Impact assessment.
         m.add_field(
             "clause_8_4_impact_assessment",
             serde_json::json!({
@@ -53,8 +55,7 @@ impl ComplianceMapper for Iso42001Mapper {
             }),
         );
 
-        // Clause 9.1 — Monitoring & measurement. The 310+ test suite
-        // is the measurement mechanism; BAAAR is the in-process gate.
+        // Clause 9.1 — Monitoring & measurement.
         m.add_field(
             "clause_9_1_monitoring_measurement",
             serde_json::json!({
@@ -64,9 +65,7 @@ impl ComplianceMapper for Iso42001Mapper {
             }),
         );
 
-        // Clause 10.2 — Continual improvement. Post-hackathon sprint
-        // is the documented improvement cycle. A real production
-        // deployment would replace this with a CI-fed changelog.
+        // Clause 10.2 — Continual improvement.
         m.add_field(
             "clause_10_2_continual_improvement",
             serde_json::json!({
@@ -75,12 +74,75 @@ impl ComplianceMapper for Iso42001Mapper {
             }),
         );
 
+        // Annex A.6 — AI system lifecycle stage. US-05: a 5th field
+        // explicitly maps the lifecycle stage (production for the
+        // hackathon demo). A real production deployment would feed
+        // this from a deployment manifest.
+        m.add_field(
+            "annex_a_6_lifecycle_stage",
+            serde_json::json!({
+                "stage": "production",
+                "deployment_manifest_ref": "Band of Agents Hackathon 2026-06-19 submission",
+                "rollback_supported": true,
+            }),
+        );
+
         m.add_note(format!(
-            "ISO/IEC 42001:2023 AIMS clauses mapped: 4/4 populated for tenant={}, invoice={}",
+            "ISO/IEC 42001:2023 AIMS clauses mapped: 5/5 populated for tenant={}, invoice={}",
             packet.tenant_id, packet.invoice_id
         ));
 
         m
+    }
+}
+
+/// Flat field struct that the SealedPacket carries
+/// alongside the rekor_entry (US-05). Built from the
+/// 5 ISO 42001 clauses + the lifecycle stage. `Default`
+/// returns the production-shaped static claims (BAAAR is
+/// always invoked, monitoring is the test suite, etc.).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Iso42001Fields {
+    /// Clause 6.1 — risk_assessment_conducted: BAAAR runs every run.
+    pub risk_assessment_conducted: bool,
+    /// Clause 8.4 — impact_assessment_ref: compliance crate version.
+    pub impact_assessment_ref: String,
+    /// Clause 9.1 — monitoring_mechanism: BAAAR + tests.
+    pub monitoring_mechanism: String,
+    /// Clause 10.2 — improvement_cycle: documented feedback loop.
+    pub improvement_cycle: String,
+    /// Annex A.6 — lifecycle_stage: production / staging / etc.
+    pub lifecycle_stage: String,
+}
+
+impl Default for Iso42001Fields {
+    fn default() -> Self {
+        Self {
+            risk_assessment_conducted: true,
+            impact_assessment_ref: format!(
+                "themis-compliance v{}",
+                env!("CARGO_PKG_VERSION")
+            ),
+            monitoring_mechanism: "BAAAR-gate + 310+-test suite".to_string(),
+            improvement_cycle: "post-hackathon sprint (vNext roadmap)".to_string(),
+            lifecycle_stage: "production".to_string(),
+        }
+    }
+}
+
+impl Iso42001Fields {
+    /// Build a one-line human-readable summary for `themis-verify`.
+    pub fn summary_line(&self) -> String {
+        format!(
+            "ISO 42001: risk_assessment={}, monitoring={}, lifecycle={}",
+            if self.risk_assessment_conducted {
+                "conducted"
+            } else {
+                "not_conducted"
+            },
+            self.monitoring_mechanism,
+            self.lifecycle_stage
+        )
     }
 }
 

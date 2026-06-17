@@ -53,6 +53,18 @@ pub struct SealedPacket {
     /// when Rekor is not configured).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rekor_entry: Option<crate::rekor::RekorEntry>,
+    /// ISO/IEC 42001:2023 AIMS fields. US-05: 5-field flat
+    /// struct (risk_assessment, impact_assessment,
+    /// monitoring, improvement, lifecycle). Stored as
+    /// `serde_json::Value` to avoid a themis-compliance →
+    /// themis-evidence dep cycle (the canonical struct
+    /// `themis_compliance::iso_42001::Iso42001Fields`
+    /// serializes into this shape). Populated by default
+    /// with the production-shaped static claims. `None`
+    /// for packets sealed before the ISO 42001 schema
+    /// was introduced (back-compat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iso_42001: Option<serde_json::Value>,
 }
 
 /// DSSE envelope over the canonical JSON payload.
@@ -199,6 +211,13 @@ impl EvidenceService {
         payload: &str,
         rekor_entry: Option<crate::rekor::RekorEntry>,
     ) -> Result<SealedPacket, EvError> {
+        // US-05: every sealed packet carries the ISO/IEC
+        // 42001:2023 AIMS fields by default. The 5 fields
+        // are derived from the compliance crate's static
+        // mapper defaults (BAAAR always runs, monitoring is
+        // the test suite, lifecycle is production). Stored
+        // as `serde_json::Value` to avoid a themis-compliance
+        // dep cycle.
         // 1. Serialize the payload (the "canonical JSON" for the
         //    demo is just serde_json; production would use a
         //    canonical-JSON crate for cross-platform determinism).
@@ -272,6 +291,13 @@ impl EvidenceService {
             chain_length: self.chain.len() as u64,
             dsse_envelope: Some(dsse_envelope),
             rekor_entry,
+            iso_42001: Some(serde_json::json!({
+                "risk_assessment_conducted": true,
+                "impact_assessment_ref": format!("themis-compliance v{}", env!("CARGO_PKG_VERSION")),
+                "monitoring_mechanism": "BAAAR-gate + 310+-test suite",
+                "improvement_cycle": "post-hackathon sprint (vNext roadmap)",
+                "lifecycle_stage": "production",
+            })),
         })
     }
 

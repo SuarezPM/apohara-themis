@@ -142,6 +142,34 @@ fn main() -> ExitCode {
                     println!("  rekor:         not anchored");
                 }
             }
+            // US-05: print the ISO/IEC 42001:2023 AIMS fields
+            // when present on the SealedPacket. The summary
+            // line is `ISO 42001: risk_assessment=conducted,
+            // monitoring=BAAAR-gate + 310+-test suite,
+            // lifecycle=production` per the plan.
+            match &packet.iso_42001 {
+                Some(v) => {
+                    let risk = v
+                        .get("risk_assessment_conducted")
+                        .and_then(|x| x.as_bool())
+                        .map(|b| if b { "conducted" } else { "not_conducted" })
+                        .unwrap_or("unknown");
+                    let monitoring = v
+                        .get("monitoring_mechanism")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("unknown");
+                    let lifecycle = v
+                        .get("lifecycle_stage")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("unknown");
+                    println!(
+                        "  iso_42001:     risk_assessment={risk}, monitoring={monitoring}, lifecycle={lifecycle}"
+                    );
+                }
+                None => {
+                    println!("  iso_42001:     not populated");
+                }
+            }
             ExitCode::SUCCESS
         }
         Err(e) => {
