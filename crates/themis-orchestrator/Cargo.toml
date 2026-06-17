@@ -50,6 +50,12 @@ futures-util = "0.3"
 # `required-features = ["bench"]` below.
 default = ["bench"]
 bench = []
+# US-09: gate the public-bench integration test (50-row
+# InvoiceNet sample) behind this feature so the default
+# `cargo test` doesn't pull the fixture into every CI run.
+# Run: `cargo test --release --features public-bench -p
+#        themis-orchestrator --test public_bench -- --nocapture`
+public-bench = []
 
 [[bin]]
 name = "themis-bench"
