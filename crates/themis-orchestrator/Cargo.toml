@@ -30,6 +30,7 @@ axum = { version = "0.7", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
 hyper = "1"
+futures-util = "0.3"
 base64 = "0.22"
 tokio-stream = { version = "0.1", features = ["sync"] }
 printpdf = "0.7"

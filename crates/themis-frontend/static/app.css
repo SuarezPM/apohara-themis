@@ -90,6 +90,49 @@
 .eyebrow--halt { color: var(--danger); }
 .eyebrow--halt::before { background: var(--danger); box-shadow: 0 0 12px var(--danger); }
 
+/* ───── SponsorStack banner (3 sponsor chips) ─────
+ * Populated by app.js from the first `sponsor_stack` SSE event.
+ * Gold-on-navy palette consistent with the rest of the design system. */
+.sponsor-stack {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  background: linear-gradient(90deg, rgba(212, 160, 23, 0.08), rgba(212, 160, 23, 0.02));
+  border-bottom: 1px solid rgba(212, 160, 23, 0.25);
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.sponsor-stack[hidden] { display: none; }
+.sponsor-stack__label {
+  color: var(--muted, #8a8a8a);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.sponsor-stack__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sponsor-stack__name {
+  color: var(--accent, #d4a017);
+  font-weight: 700;
+}
+.sponsor-stack__detail {
+  color: var(--muted, #8a8a8a);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 11px;
+}
+.sponsor-stack__chip--band { border-color: rgba(82, 156, 222, 0.4); }
+.sponsor-stack__chip--aiml { border-color: rgba(212, 160, 23, 0.4); }
+.sponsor-stack__chip--featherless { border-color: rgba(140, 200, 140, 0.4); }
+
 /* ───── N6 (sticky functional chrome: tenant switch + live event counter) ─────
  * This is NOT replaced by the nav-island because it carries state the user
  * interacts with: tenant select + live event count. It sits below the

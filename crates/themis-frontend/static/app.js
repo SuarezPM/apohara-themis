@@ -576,6 +576,32 @@
       // EventSource unsupported or backend down — leave badge as-is.
       return;
     }
+    es.addEventListener('sponsor_stack', (ev) => {
+      // First event on every SSE connect — populate the
+      // 3-chip SponsorStack banner (Band + AI/ML API +
+      // Featherless) above the Band room transcript. The
+      // per-sponsor `detail` string is the model label or
+      // transport version emitted by the backend.
+      try {
+        const data = JSON.parse(ev.data || '{}');
+        const root = document.getElementById('sponsor-stack');
+        if (!root) return;
+        const map = {
+          band: 'band',
+          aiml_api: 'aiml_api',
+          featherless: 'featherless',
+        };
+        for (const [k, htmlKey] of Object.entries(map)) {
+          const el = root.querySelector(`[data-sponsor-detail="${htmlKey}"]`);
+          if (el && typeof data[k] === 'string') {
+            el.textContent = data[k];
+          }
+        }
+        root.hidden = false;
+      } catch (_e) {
+        // Malformed payload — leave the banner hidden.
+      }
+    });
     es.addEventListener('provider_active', (ev) => {
       try {
         const data = JSON.parse(ev.data);

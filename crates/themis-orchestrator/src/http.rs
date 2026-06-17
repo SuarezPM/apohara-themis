@@ -27,7 +27,7 @@ use serde_json::json;
 use themis_compliance::service::ComplianceReport;
 use themis_evidence::packet::SealedPacket;
 use themis_frontend::{APP_CSS, APP_JS, COMPLIANCE_HTML, INDEX_HTML, TOKENS_CSS};
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+use tokio_stream::wrappers::BroadcastStream;
 
 use crate::events::{Event, EventBus};
 use crate::fixtures::load_all;
@@ -71,6 +71,10 @@ pub struct AppState {
     /// start of every run. Comes from `LlmBackend::model_id()` at
     /// binary startup; defaults to `"mock-fallback"` in tests.
     pub model_id: String,
+    /// Sponsor stack labels emitted as the first event on every
+    /// SSE connect. The frontend renders the 3 logos in a
+    /// fixed banner above the Band room transcript.
+    pub sponsor_stack: crate::events::SponsorStackInfo,
 }
 
 /// Build the production-shaped `AppState`. Used by `main()` and
@@ -93,6 +97,7 @@ pub fn build_default_state(
         sealed: DashMap::new(),
         model_id,
         band_room: Some(room_concrete),
+        sponsor_stack: crate::events::SponsorStackInfo::default(),
     }
 }
 
@@ -167,20 +172,44 @@ async fn get_events_sse(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
     let rx = state.event_bus.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|res| {
-        // Drop Lagged + Closed events (subscriber can't keep up).
+    // Emit `Event::SponsorStack` as the FIRST event on every
+    // SSE connect so the frontend can render the 3-logo banner
+    // above the Band room transcript within the first 30s of
+    // the demo. The label values come from `AppState` so tests
+    // can override per case. The event is published on the
+    // bus (every subscriber will see it), then we materialize
+    // a one-element `once` prelude so the SSE stream yields it
+    // first before forwarding the bus events.
+    let sponsor = state.sponsor_stack.clone();
+    let sponsor_event = crate::events::Event::SponsorStack {
+        run_id: uuid::Uuid::nil(),
+        band: sponsor.band,
+        aiml_api: sponsor.aiml_api,
+        featherless: sponsor.featherless,
+    };
+    let prelude_json = serde_json::to_string(&sponsor_event).unwrap_or_default();
+    let prelude = axum::response::sse::Event::default()
+        .event(sponsor_event.type_str())
+        .data(prelude_json);
+    let prelude_stream = futures_util::stream::once(async move { Ok::<_, Infallible>(prelude) });
+    let bus_stream = tokio_stream::StreamExt::filter_map(BroadcastStream::new(rx), |res| {
         match res {
             Ok(event) => {
                 let json = serde_json::to_string(&event).unwrap_or_default();
                 let sse = axum::response::sse::Event::default()
                     .event(event.type_str())
                     .data(json);
-                Some(Ok(sse))
+                Some(Ok::<_, Infallible>(sse))
             }
             Err(_) => None,
         }
     });
-    Sse::new(stream).keep_alive(
+    // Disambiguate: `futures_util::StreamExt::chain` (the bus
+    // stream implements both `tokio_stream::Stream` and
+    // `futures_util::Stream`; the prelude only implements
+    // `futures_util::Stream`).
+    let merged = futures_util::StreamExt::chain(prelude_stream, bus_stream);
+    Sse::new(merged).keep_alive(
         axum::response::sse::KeepAlive::new()
             .interval(Duration::from_secs(15))
             .text("keep-alive"),
@@ -672,6 +701,7 @@ mod tests {
             sealed: DashMap::new(),
             model_id: "mock-fallback".to_string(),
             band_room: None,
+            sponsor_stack: crate::events::SponsorStackInfo::default(),
         }
     }
 

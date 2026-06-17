@@ -115,6 +115,55 @@ pub enum Event {
         /// legitimate emergency override per CISO policy").
         reason: String,
     },
+    /// Announces the sponsor stack of the current build.
+    /// Emitted as the FIRST event on every new SSE connection
+    /// so the frontend can render the SponsorStack banner
+    /// (3 logos: Band + AI/ML API + Featherless) above the
+    /// Band room transcript. The per-sponsor strings are the
+    /// visible claim of "meaningful use" of each sponsor
+    /// tool — the Band layer for coordination, AI/ML API for
+    /// the FraudAuditor + GaapClassifier backends, Featherless
+    /// for the Extractor + PoMatcher backends. The model_id
+    /// per agent is emitted separately via `ProviderActive`.
+    SponsorStack {
+        /// The run id (defaults to Nil UUID for the connection-level
+        /// announcement).
+        run_id: Uuid,
+        /// Display label for the Band transport (e.g.
+        /// `"band-sdk[langgraph]==0.2.11"`).
+        band: String,
+        /// Display label for the AI/ML API provider (e.g.
+        /// `"anthropic/claude-sonnet-4.5 + meta-llama/Llama-3.3-70B-Instruct"`).
+        aiml_api: String,
+        /// Display label for the Featherless provider (e.g.
+        /// `"Qwen/Qwen3-Coder-30B-A3B-Instruct"`).
+        featherless: String,
+    },
+}
+
+/// Sponsor stack labels carried by `AppState` and embedded in
+/// the FIRST `Event::SponsorStack` emitted on every SSE
+/// connect. Constructed once at binary startup; tests can
+/// override per case via `AppState { sponsor_stack, .. }`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SponsorStackInfo {
+    /// Display label for the Band transport.
+    pub band: String,
+    /// Display label for the AI/ML API provider.
+    pub aiml_api: String,
+    /// Display label for the Featherless provider.
+    pub featherless: String,
+}
+
+impl Default for SponsorStackInfo {
+    fn default() -> Self {
+        Self {
+            band: "band-sdk[langgraph]==0.2.11".to_string(),
+            aiml_api:
+                "anthropic/claude-sonnet-4.5 + meta-llama/Llama-3.3-70B-Instruct".to_string(),
+            featherless: "Qwen/Qwen3-Coder-30B-A3B-Instruct".to_string(),
+        }
+    }
 }
 
 impl Event {
@@ -129,6 +178,7 @@ impl Event {
             Event::ProviderActive { .. } => "provider_active",
             Event::AgentDispute { .. } => "agent_dispute",
             Event::HumanOverride { .. } => "human_override",
+            Event::SponsorStack { .. } => "sponsor_stack",
         }
     }
 }

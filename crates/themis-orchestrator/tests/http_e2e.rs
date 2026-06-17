@@ -106,6 +106,7 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
         sealed: dashmap::DashMap::new(),
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
+        sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
     };
     build_router(state)
 }
@@ -591,6 +592,7 @@ async fn e2e_provider_active_event_includes_model_id() {
         sealed: dashmap::DashMap::new(),
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
+        sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
     };
     let app = build_router(state);
 
@@ -753,4 +755,58 @@ async fn e2e_post_invoices_works_with_mock_fallback_path() {
     // we're testing the routing layer, not the bin.
     let model_id = v["model_id"].as_str().expect("model_id in response");
     assert_eq!(model_id, "e2e-mock");
+}
+
+/// US-02: GET /events must emit `Event::SponsorStack` as the
+/// FIRST event on every fresh SSE connect. This is the demo's
+/// first 30s signal — the 3 sponsor logos appear in the
+/// frontend banner before any agent runs.
+#[tokio::test]
+async fn e2e_sponsor_stack_event_emitted_first_on_sse_connect() {
+    use axum::body::to_bytes;
+    let f = load_fixture("wayne-002.json");
+    let app = router_for(&f);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/events")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Read the first SSE event by parsing the response body.
+    // axum's Sse frames are `event: <name>\ndata: <json>\n\n`.
+    let body = to_bytes(resp.into_body(), 16 * 1024).await.unwrap();
+    let text = std::str::from_utf8(&body).unwrap();
+    // Pull the first `event:` line and the first `data:` line.
+    let event_name = text
+        .lines()
+        .find_map(|l| l.strip_prefix("event: ").map(|s| s.trim().to_string()))
+        .expect("first SSE event must have an event: line");
+    let data_line = text
+        .lines()
+        .find_map(|l| l.strip_prefix("data: ").map(|s| s.trim().to_string()))
+        .expect("first SSE event must have a data: line");
+    assert_eq!(
+        event_name, "sponsor_stack",
+        "first SSE event must be sponsor_stack, got {event_name}"
+    );
+    let v: serde_json::Value = serde_json::from_str(&data_line).unwrap();
+    assert_eq!(v["type"], "sponsor_stack");
+    // All three sponsor labels populated.
+    assert!(
+        v["band"].as_str().unwrap().contains("band-sdk"),
+        "band label must mention band-sdk: {v:?}"
+    );
+    assert!(
+        v["aiml_api"].as_str().unwrap().contains("claude-sonnet-4.5"),
+        "aiml_api label must include claude-sonnet-4.5: {v:?}"
+    );
+    assert!(
+        v["featherless"].as_str().unwrap().contains("Qwen3-Coder-30B"),
+        "featherless label must include Qwen3-Coder-30B: {v:?}"
+    );
 }

@@ -88,6 +88,7 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
         sealed: dashmap::DashMap::new(),
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
+        sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
     };
     build_router(state)
 }

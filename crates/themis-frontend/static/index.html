@@ -36,6 +36,25 @@
   </nav>
 </div>
 
+<!-- ───── SponsorStack banner (3 logos: Band + AI/ML API + Featherless) ─────
+     Populated by app.js from the first `sponsor_stack` event on every SSE connect.
+     The labels are also the visible claim of "meaningful use" of each sponsor tool. -->
+<div id="sponsor-stack" class="sponsor-stack" data-qa="sponsor-stack" hidden>
+  <span class="sponsor-stack__label">powered by</span>
+  <span class="sponsor-stack__chip sponsor-stack__chip--band" data-sponsor="band">
+    <span class="sponsor-stack__name">Band</span>
+    <span class="sponsor-stack__detail" data-sponsor-detail="band">—</span>
+  </span>
+  <span class="sponsor-stack__chip sponsor-stack__chip--aiml" data-sponsor="aiml_api">
+    <span class="sponsor-stack__name">AI/ML API</span>
+    <span class="sponsor-stack__detail" data-sponsor-detail="aiml_api">—</span>
+  </span>
+  <span class="sponsor-stack__chip sponsor-stack__chip--featherless" data-sponsor="featherless">
+    <span class="sponsor-stack__name">Featherless</span>
+    <span class="sponsor-stack__detail" data-sponsor-detail="featherless">—</span>
+  </span>
+</div>
+
 <!-- ───── Sticky N6 (functional chrome — tenant switch + live event counter, NOT replaced by nav-island) ───── -->
 <nav class="n6" aria-label="Tenant + live status">
   <div class="n6__brand">
