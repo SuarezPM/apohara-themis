@@ -365,3 +365,209 @@ mod tests {
         assert!(entry.integrated_time <= after);
     }
 }
+
+// ---------- SigstoreVerifyRekorClient (vNext §6.1, sigstore-verify 0.8) ----------
+//
+// Replaces `CosignRekorClient` (which shells out to the `cosign`
+// binary, adding ~50 MB to the deploy image). Uses the pure-Rust
+// `sigstore-verify` crate with the production trusted root
+// embedded as a const string — no network fetch on cold start.
+//
+// SCOPE: this client only REPLACES the `verify()` path. The
+// `anchor()` path is still mock (publishing to the public Rekor
+// log requires an OIDC identity tied to a real signing key, which
+// the demo does not have). The post-hackathon migration to a
+// real publishing identity is out of scope.
+
+use sigstore_trust_root::{TrustedRoot, SIGSTORE_PRODUCTION_TRUSTED_ROOT};
+use sigstore_types::Bundle;
+
+/// Pure-Rust sigstore-verify client. The trusted root is the
+/// production public-good Sigstore instance, embedded as a const
+/// (no I/O on construction). `anchor()` returns a synthetic
+/// `RekorEntry`; `verify()` actually validates the bundle
+/// signature chain against the embedded trust root.
+pub struct SigstoreVerifyRekorClient {
+    /// Cached parsed trust root (parsed once at construction;
+    /// SIGSTORE_PRODUCTION_TRUSTED_ROOT is ~30 KB of TUF JSON,
+    /// parsing is sub-millisecond).
+    trusted_root: TrustedRoot,
+    /// Public base URL for the synthetic bundle URL (the
+    /// real entry would live at this URL; we use a stable
+    /// placeholder).
+    url_base: String,
+}
+
+impl std::fmt::Debug for SigstoreVerifyRekorClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SigstoreVerifyRekorClient")
+            .field("trusted_root", &"<SIGSTORE_PRODUCTION_TRUSTED_ROOT>")
+            .field("url_base", &self.url_base)
+            .finish()
+    }
+}
+
+impl SigstoreVerifyRekorClient {
+    /// New client with the embedded production trust root.
+    /// No network I/O — the trust root is a Rust const.
+    pub fn new() -> Result<Self, RekorError> {
+        let trusted_root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
+            .map_err(|e| RekorError::InvalidResponse(format!("TrustedRoot::from_json: {e}")))?;
+        Ok(Self {
+            trusted_root,
+            url_base: "https://rekor.sigstore.dev/api/v1/log/entries".to_string(),
+        })
+    }
+
+    /// Override the bundle URL base (test-only helper).
+    #[cfg(test)]
+    pub fn with_url_base(mut self, url_base: impl Into<String>) -> Self {
+        self.url_base = url_base.into();
+        self
+    }
+
+    /// Encode a `RekorEntry` (synthetic, the body is the BLAKE3
+    /// hash, no real SET since we never published to Rekor).
+    fn synthetic_entry(
+        &self,
+        blake3_hash_hex: &str,
+        tenant_id: &str,
+        log_index: u64,
+    ) -> RekorEntry {
+        let h = blake3::hash(blake3_hash_hex.as_bytes());
+        let uuid = format!("synthetic-{}", &h.to_hex().to_string()[..16]);
+        let body_b64 = base64_encode(blake3_hash_hex.as_bytes());
+        let integrated_time = chrono::Utc::now().timestamp();
+        // Empty SET — the real SET would be the Rekor
+        // server's signature on the entry; the synthetic
+        // entry has none. `verify()` against this entry
+        // validates the body-hash match, not the SET
+        // (since the SET is empty).
+        let signed_entry_timestamp = String::new();
+        let bundle_url = format!("{}/{}?tenant={}", self.url_base, uuid, tenant_id);
+        RekorEntry {
+            uuid,
+            log_index,
+            body_b64,
+            integrated_time,
+            signed_entry_timestamp,
+            bundle_url,
+        }
+    }
+
+    /// Parse the synthetic `body_b64` of an entry back to its
+    /// BLAKE3 hash hex string. Returns `None` on decode failure.
+    fn entry_body_hex(entry: &RekorEntry) -> Option<String> {
+        let body = base64_decode(&entry.body_b64).ok()?;
+        String::from_utf8(body).ok()
+    }
+}
+
+impl Default for SigstoreVerifyRekorClient {
+    fn default() -> Self {
+        // Construction failure on the embedded trust root is
+        // catastrophic (the JSON is shipped as a Rust const);
+        // unwrap is safe. The `new()` method returns Result
+        // for callers that prefer to handle the (impossible)
+        // parse failure.
+        Self::new().expect("SIGSTORE_PRODUCTION_TRUSTED_ROOT must parse")
+    }
+}
+
+#[async_trait]
+impl RekorClient for SigstoreVerifyRekorClient {
+    async fn anchor(
+        &self,
+        blake3_hash_hex: &str,
+        tenant_id: &str,
+    ) -> Result<RekorEntry, RekorError> {
+        // Synthetic entry (no real Rekor publish — that requires
+        // an OIDC identity). The BLAKE3 hash is the entry's
+        // body, so verify() can confirm hash↔entry match.
+        Ok(self.synthetic_entry(blake3_hash_hex, tenant_id, 0))
+    }
+
+    async fn verify(&self, entry: &RekorEntry, blake3_hash_hex: &str) -> bool {
+        // 1. The entry body must decode to the BLAKE3 hash.
+        //    This is the cheap, deterministic check; works for
+        //    both synthetic and real entries.
+        match Self::entry_body_hex(entry) {
+            Some(body) if body == blake3_hash_hex => {}
+            _ => return false,
+        }
+        // 2. If the entry has a non-empty signed_entry_timestamp,
+        //    parse it as a sigstore Bundle and run a real
+        //    verification against the embedded trust root.
+        //    This is the new path (replaces the cosign
+        //    shell-out).
+        if entry.signed_entry_timestamp.is_empty() {
+            // Synthetic entry: hash match is sufficient.
+            return true;
+        }
+        // Real entry: parse the SET as a Bundle JSON and
+        // verify. The bundle format includes the certificate
+        // chain + signature + transparency log inclusion
+        // proof. We don't error on parse failure (the
+        // synthetic entry path is the common case); we just
+        // return false (verification failed).
+        let bundle = match Bundle::from_json(&entry.signed_entry_timestamp) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        // The artifact to verify is the BLAKE3 hash bytes.
+        let artifact = blake3_hash_hex.as_bytes();
+        // Default policy: no identity requirement (the demo
+        // does not have an OIDC identity).
+        let policy = sigstore_verify::VerificationPolicy::default();
+        let result = sigstore_verify::verify(artifact, &bundle, &policy, &self.trusted_root);
+        // `verify` returns `Result<VerificationResult, sigstore_verify::Error>`.
+        // A successful Result means the bundle verified; we don't
+        // introspect the inner VerificationResult fields (their
+        // shape depends on the verification mode).
+        result.is_ok()
+    }
+}
+
+#[cfg(test)]
+mod sigstore_verify_tests {
+    use super::*;
+
+    #[test]
+    fn sigstore_verify_client_constructs_with_embedded_trust_root() {
+        // The whole point: no I/O, no network, the trust root
+        // is a const. If this constructs, the trust root
+        // parsed.
+        let client = SigstoreVerifyRekorClient::new()
+            .expect("embedded trust root must parse");
+        // Sanity: the trusted_root is non-empty (the production
+        // JSON is ~30 KB).
+        // We can't introspect the TrustedRoot directly, but
+        // construction succeeding is the contract.
+        let _ = client;
+    }
+
+    #[tokio::test]
+    async fn sigstore_verify_anchor_returns_synthetic_entry_with_matching_body() {
+        let client = SigstoreVerifyRekorClient::new().unwrap();
+        let hash = "a]".repeat(32); // 64 hex chars
+        let entry = client.anchor(&hash, "stark").await.unwrap();
+        // body_b64 decodes to the original hash.
+        let body = SigstoreVerifyRekorClient::entry_body_hex(&entry).unwrap();
+        assert_eq!(body, hash);
+        // SET is empty (synthetic).
+        assert!(entry.signed_entry_timestamp.is_empty());
+        // URL includes the tenant.
+        assert!(entry.bundle_url.contains("tenant=stark"));
+    }
+
+    #[tokio::test]
+    async fn sigstore_verify_recognises_matching_hash() {
+        let client = SigstoreVerifyRekorClient::new().unwrap();
+        let hash = "b]".repeat(32);
+        let entry = client.anchor(&hash, "wayne").await.unwrap();
+        // verify() with the original hash returns true.
+        assert!(client.verify(&entry, &hash).await);
+        // verify() with a different hash returns false.
+        assert!(!client.verify(&entry, "wrong").await);
+    }
+}
