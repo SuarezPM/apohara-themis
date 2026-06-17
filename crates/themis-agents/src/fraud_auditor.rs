@@ -66,6 +66,8 @@ impl Agent for FraudAuditor {
             max_tokens: 1024,
             temperature: 0.0,
             seed: Some(42),
+            response_schema: Some(fraud_assessment_schema()),
+            response_schema_name: Some("FraudAssessment"),
         };
 
         let resp = self.llm.complete(req).await?;
@@ -129,6 +131,39 @@ decisions for an invoice, produce a JSON object matching this schema:
 When you set `kind` to \"other\", the `value` field carries a custom tag.
 
 Respond with ONLY the JSON object. No commentary, no markdown fences.";
+
+/// JSON schema for `FraudAssessment`, sent to the LLM via OpenAI's
+/// `response_format.json_schema` (constrained decoding). Mirrors the
+/// Rust `FraudAssessment` struct; constrained decoding eliminates
+/// the `strip_code_fences` fallback path for production runs while
+/// keeping the legacy text path as a defensive parse.
+pub fn fraud_assessment_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "risk_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "findings": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["secret_leak", "price_anomaly", "phantom_vendor", "math_fraud", "duplicate", "other"]
+                        },
+                        "value": {"type": "string"},
+                        "description": {"type": "string"}
+                    },
+                    "required": ["kind", "value", "description"]
+                }
+            },
+            "coherence_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "debate_rounds": {"type": "integer", "minimum": 0},
+            "explicit_halt": {"type": "boolean"}
+        },
+        "required": ["risk_score", "findings", "coherence_score", "debate_rounds", "explicit_halt"]
+    })
+}
 
 fn strip_code_fences(text: &str) -> String {
     let trimmed = text.trim();

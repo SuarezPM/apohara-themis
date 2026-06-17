@@ -28,6 +28,18 @@ pub struct LlmRequest {
     pub temperature: f32,
     /// Optional seed for determinism.
     pub seed: Option<u64>,
+    /// Optional JSON schema for constrained decoding. When `Some`,
+    /// the backend sends `response_format: {type: "json_schema",
+    /// json_schema: {name, schema}}` to the provider (OpenAI-compat
+    /// `response_format.json_schema`, supported by vLLM/xGrammar via
+    /// Featherless). When `None`, the backend omits the key
+    /// (preserves the legacy text-completion path). `strip_code_fences`
+    /// remains the defensive parse for whatever the LLM returns.
+    pub response_schema: Option<serde_json::Value>,
+    /// Name for the JSON schema (used as `json_schema.name`). Only
+    /// consulted when `response_schema` is `Some`. Defaults to the
+    /// agent role when the caller doesn't override.
+    pub response_schema_name: Option<&'static str>,
 }
 
 /// A response from an LLM.
@@ -281,7 +293,7 @@ impl LlmBackend for FeatherlessBackend {
         // forward `seed` — Featherless is a hosted router, and
         // seed support is model-dependent. Determinism for the
         // demo comes from temperature=0.0 (set by the agents).
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": [
                 {"role": "system", "content": req.system_prompt},
@@ -290,6 +302,23 @@ impl LlmBackend for FeatherlessBackend {
             "max_tokens": req.max_tokens,
             "temperature": req.temperature,
         });
+        // OpenAI-compat `response_format: {type: "json_schema",
+        // json_schema: {name, schema}}` for constrained decoding.
+        // When the agent passes `response_schema: Some`, the
+        // provider is expected to return strict JSON conforming to
+        // the schema (vLLM/xGrammar via Featherless supports this
+        // for Qwen3-Coder-30B). `strip_code_fences` in the caller
+        // remains the defensive parse for whatever the LLM returns.
+        if let Some(schema) = req.response_schema.as_ref() {
+            let name = req.response_schema_name.unwrap_or("ThemisResponse");
+            body["response_format"] = serde_json::json!({
+                "type": "json_schema",
+                "json_schema": {
+                    "name": name,
+                    "schema": schema,
+                },
+            });
+        }
 
         let url = format!("{}/v1/chat/completions", self.base_url);
         let mut last_err: Option<AgentError> = None;
@@ -401,6 +430,8 @@ mod tests {
             max_tokens: 1024,
             temperature: 0.0,
             seed: None,
+            response_schema: None,
+            response_schema_name: None,
         }
     }
 
@@ -476,6 +507,8 @@ mod tests {
             max_tokens: 100,
             temperature: 0.0,
             seed: None,
+            response_schema: None,
+            response_schema_name: None,
         };
         let out = mock.complete(r).await.unwrap();
         assert_eq!(out.text, "gaap");
@@ -589,6 +622,8 @@ mod tests {
                 max_tokens: 64,
                 temperature: 0.0,
                 seed: Some(42),
+                response_schema: None,
+                response_schema_name: None,
             })
             .await
             .unwrap();
@@ -719,6 +754,8 @@ mod tests {
                 max_tokens: 16,
                 temperature: 0.0,
                 seed: None,
+                response_schema: None,
+                response_schema_name: None,
             })
             .await
             .unwrap();
@@ -743,6 +780,8 @@ mod tests {
                 max_tokens: 16,
                 temperature: 0.0,
                 seed: None,
+                response_schema: None,
+                response_schema_name: None,
             })
             .await
             .unwrap_err();
@@ -773,6 +812,8 @@ mod tests {
                 max_tokens: 16,
                 temperature: 0.0,
                 seed: None,
+                response_schema: None,
+                response_schema_name: None,
             })
             .await
             .unwrap_err();
@@ -787,6 +828,109 @@ mod tests {
     async fn featherless_model_id_is_static_str() {
         let backend = FeatherlessBackend::new("k".to_string(), "Qwen/Qwen3-Coder-30B-A3B-Instruct");
         assert_eq!(backend.model_id(), "Qwen/Qwen3-Coder-30B-A3B-Instruct");
+    }
+
+    #[tokio::test]
+    async fn featherless_sends_response_format_when_schema_set() {
+        // When `response_schema` is Some, the request body must
+        // include `response_format: {type: "json_schema", ...}` for
+        // OpenAI-compat constrained decoding. The schema is sent
+        // verbatim and the name is the caller's `response_schema_name`.
+        let (port, listener) = bind_ephemeral().await;
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let captured_clone = captured.clone();
+        let handle = spawn_one_shot_handler(listener, move |req_bytes| {
+            *captured_clone.lock().unwrap() = req_bytes.clone();
+            let body = serde_json::json!({
+                "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1}
+            })
+            .to_string();
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+        });
+        let backend = FeatherlessBackend::new("k".to_string(), "Qwen/Qwen3-Coder-30B-A3B-Instruct")
+            .with_base_url(format!("http://127.0.0.1:{port}"));
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"a": {"type": "number"}},
+            "required": ["a"]
+        });
+        backend
+            .complete(LlmRequest {
+                system_prompt: "s".to_string(),
+                user_prompt: "u".to_string(),
+                max_tokens: 16,
+                temperature: 0.0,
+                seed: None,
+                response_schema: Some(schema.clone()),
+                response_schema_name: Some("TestSchema"),
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        let req_str = String::from_utf8_lossy(&captured.lock().unwrap().clone()).to_string();
+        assert!(
+            req_str.contains("\"response_format\""),
+            "request must include response_format when response_schema is Some, got:\n{req_str}"
+        );
+        assert!(
+            req_str.contains("\"type\":\"json_schema\""),
+            "response_format.type must be json_schema, got:\n{req_str}"
+        );
+        assert!(
+            req_str.contains("\"name\":\"TestSchema\""),
+            "response_format.json_schema.name must be TestSchema, got:\n{req_str}"
+        );
+        assert!(
+            req_str.contains("\"required\":[\"a\"]"),
+            "response_format.json_schema.schema must include the schema verbatim, got:\n{req_str}"
+        );
+    }
+
+    #[tokio::test]
+    async fn featherless_omits_response_format_when_schema_none() {
+        // When `response_schema` is None, the body must NOT include
+        // `response_format` (legacy text-completion path).
+        let (port, listener) = bind_ephemeral().await;
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let captured_clone = captured.clone();
+        let handle = spawn_one_shot_handler(listener, move |req_bytes| {
+            *captured_clone.lock().unwrap() = req_bytes.clone();
+            let body = serde_json::json!({
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1}
+            })
+            .to_string();
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+        });
+        let backend = FeatherlessBackend::new("k".to_string(), "Qwen/Qwen3-Coder-30B-A3B-Instruct")
+            .with_base_url(format!("http://127.0.0.1:{port}"));
+        backend
+            .complete(LlmRequest {
+                system_prompt: "s".to_string(),
+                user_prompt: "u".to_string(),
+                max_tokens: 16,
+                temperature: 0.0,
+                seed: None,
+                response_schema: None,
+                response_schema_name: None,
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        let req_str = String::from_utf8_lossy(&captured.lock().unwrap().clone()).to_string();
+        assert!(
+            !req_str.contains("\"response_format\""),
+            "request must NOT include response_format when response_schema is None, got:\n{req_str}"
+        );
     }
 
     #[test]

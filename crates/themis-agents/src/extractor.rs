@@ -79,6 +79,8 @@ impl Agent for ExtractorAgent {
             max_tokens: 2048,
             temperature: 0.0, // deterministic for the JSON contract
             seed: Some(42),
+            response_schema: Some(extracted_invoice_schema()),
+            response_schema_name: Some("ExtractedInvoice"),
         };
 
         let resp = self.llm.complete(req).await?;
@@ -142,6 +144,33 @@ respond with a single JSON object matching this schema exactly:
 }
 
 Respond with ONLY the JSON object. No commentary, no markdown fences.";
+
+/// JSON schema for `ExtractedInvoice`, sent to the LLM via OpenAI's
+/// `response_format.json_schema` (constrained decoding). Mirrors the
+/// Rust `ExtractedInvoice` struct.
+pub fn extracted_invoice_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string", "minLength": 1},
+            "amount_cents": {"type": "integer", "minimum": 0},
+            "line_items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string"},
+                        "amount_cents": {"type": "integer", "minimum": 0}
+                    },
+                    "required": ["description", "amount_cents"]
+                }
+            },
+            "date_iso": {"type": "string"},
+            "po_ref": {"type": "string"}
+        },
+        "required": ["vendor", "amount_cents", "line_items", "date_iso", "po_ref"]
+    })
+}
 
 /// Strip ```json ... ``` fences (and stray ``` blocks) from LLM
 /// output. Tolerant of whitespace.

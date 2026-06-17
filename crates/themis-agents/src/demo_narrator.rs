@@ -70,6 +70,11 @@ object: {\"summary\": \"<text>\"}.";
             max_tokens: 256,
             temperature: 0.3,
             seed: None,
+            // DemoNarrator is prose — no JSON schema, no constrained
+            // decoding. The `strip_code_fences` helper still parses
+            // the optional `{ "summary": "..." }` envelope.
+            response_schema: None,
+            response_schema_name: None,
         };
 
         let resp = self.llm.complete(req).await?;

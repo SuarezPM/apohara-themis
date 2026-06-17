@@ -188,6 +188,8 @@ impl Agent for GaapClassifier {
             max_tokens: 1024,
             temperature: 0.0, // MUST be 0 — GAAP is deterministic
             seed: Some(42),
+            response_schema: Some(gaap_classification_schema()),
+            response_schema_name: Some("GaapClassification"),
         };
 
         let resp = self.llm.complete(req).await?;
@@ -265,6 +267,32 @@ the most appropriate account code. Respond with a single JSON object:
 Use ONLY account codes from the taxonomy. The account_code + account_name \
 in the top level should be the dominant classification. Respond with ONLY \
 the JSON object, no commentary, no markdown fences.";
+
+/// JSON schema for `GaapClassification`, sent to the LLM via OpenAI's
+/// `response_format.json_schema` (constrained decoding).
+pub fn gaap_classification_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "framework": {"type": "string", "enum": ["us_gaap"]},
+            "account_code": {"type": "string"},
+            "account_name": {"type": "string"},
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "per_line_item": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string"},
+                        "account_code": {"type": "string"}
+                    },
+                    "required": ["description", "account_code"]
+                }
+            }
+        },
+        "required": ["framework", "account_code", "account_name", "confidence", "per_line_item"]
+    })
+}
 
 fn strip_code_fences(text: &str) -> String {
     let trimmed = text.trim();
