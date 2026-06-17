@@ -460,8 +460,12 @@ impl Orchestrator {
         let svc = map.get_mut(tenant_id).ok_or_else(|| {
             OrchestratorError::Evidence(format!("no evidence service for tenant {tenant_id}"))
         })?;
+        // Propagate the Rekor entry from the inner `process_invoice`
+        // run (which already invoked `anchor_in_rekor` on the
+        // BLAKE3 hash) into the SealedPacket. US-A5: the PDF
+        // + verifier now carry the transparency-log proof.
         let sealed = svc
-            .seal(invoice_id, &payload, None)
+            .seal(invoice_id, &payload, signed.rekor_entry.clone())
             .await
             .map_err(|e| OrchestratorError::Evidence(format!("seal: {e}")))?;
         Ok((signed, Some(sealed)))

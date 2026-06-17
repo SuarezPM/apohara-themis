@@ -440,3 +440,54 @@ pub fn build_orchestrator(
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     Orchestrator::new_with_rekor(rooms, agents, tenants, rekor)
 }
+
+/// Build a fully-wired orchestrator with the 5-fixture mock LLM,
+/// an optional Rekor client, AND a per-tenant evidence service
+/// map. Used by US-A5 integration tests to exercise
+/// `process_invoice_sealed` (the path that emits `SealedPacket`).
+pub fn build_orchestrator_with_evidence(
+    f: &DemoInvoice,
+    counter: Option<Arc<AtomicU32>>,
+    rekor: Option<Arc<dyn RekorClient>>,
+    evidence: HashMap<String, themis_evidence::packet::EvidenceService>,
+) -> Orchestrator {
+    let mock_llm: Arc<dyn LlmBackend> = Arc::new(
+        MockLlmProvider::new("mock-test")
+            .with_response(
+                &f.invoice_id,
+                LlmResponse {
+                    text: serde_json::to_string(&f.extracted).unwrap(),
+                    input_tokens: 256,
+                    output_tokens: 128,
+                    model_id: "mock-test".to_string(),
+                },
+            )
+            .with_response(
+                "assess_fraud_risk",
+                LlmResponse {
+                    text: fraud_auditor_payload(f),
+                    input_tokens: 256,
+                    output_tokens: 64,
+                    model_id: "mock-test".to_string(),
+                },
+            )
+            .with_default(stub_default_response("mock-test")),
+    );
+    let mut dispatch = HashMap::new();
+    for name in [
+        "extractor",
+        "po_matcher",
+        "fraud_auditor",
+        "gaap_classifier",
+        "provenance_signer",
+        "demo_narrator",
+        "regression_tester",
+        "audit_watchdog",
+    ] {
+        dispatch.insert(name.to_string(), mock_llm.clone());
+    }
+    let agents = build_stub_agents(dispatch, counter);
+    let rooms: Arc<dyn crate::room::BandRoom> = MockBandRoom::new().into_arc();
+    let tenants = Arc::new(TenantRegistry::with_default_tenants());
+    Orchestrator::with_evidence(rooms, agents, tenants, rekor, evidence)
+}

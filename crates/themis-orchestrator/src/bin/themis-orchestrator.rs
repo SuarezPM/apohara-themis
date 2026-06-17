@@ -15,12 +15,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use themis_evidence::rekor::MockRekorClient;
 // (FreeTSAAuthority is referenced by fully-qualified path in main.)
 use themis_orchestrator::fixtures::{load_all, DemoFixture};
 use themis_orchestrator::http::{build_router, AppState};
 use themis_orchestrator::llm_backend::select_backend;
 use themis_orchestrator::orchestrator::Orchestrator;
+use themis_orchestrator::rekor_backend;
 // (ScriptedBandRoom is referenced by fully-qualified path in main.)
 use themis_orchestrator::tenants::TenantRegistry;
 
@@ -126,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rooms,
         agents,
         tenants,
-        Some(Arc::new(MockRekorClient::new()) as Arc<dyn themis_evidence::rekor::RekorClient>),
+        Some(rekor_backend::build_rekor_client()),
         evidence_map,
     );
 

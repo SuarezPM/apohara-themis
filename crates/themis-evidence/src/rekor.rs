@@ -23,6 +23,7 @@
 //! orchestrator uses. The packet's `SealedPacket` carries the
 //! `RekorEntry` after a successful `anchor()` call.
 
+use std::fmt::Debug;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -71,7 +72,7 @@ pub enum RekorError {
 
 /// The trait every Rekor backend implements.
 #[async_trait]
-pub trait RekorClient: Send + Sync + 'static {
+pub trait RekorClient: Send + Sync + Debug + 'static {
     /// Anchor a BLAKE3 hash in the transparency log. Returns the
     /// entry that was published (caller stores it in the packet).
     async fn anchor(
@@ -91,6 +92,7 @@ pub trait RekorClient: Send + Sync + 'static {
 /// In-memory Rekor client for tests + demo. Deterministic given
 /// the input hash (same hash → same UUID). Per-instance log_index
 /// counter so multiple `anchor()` calls produce distinct entries.
+#[derive(Debug)]
 pub struct MockRekorClient {
     log_index: AtomicU64,
     url_base: String,
@@ -149,6 +151,7 @@ impl RekorClient for MockRekorClient {
 // ---------- CosignRekorClient ----------
 
 /// `cosign` shell-out Rekor client. Per ADR-002.
+#[derive(Debug)]
 pub struct CosignRekorClient {
     cosign_path: PathBuf,
 }

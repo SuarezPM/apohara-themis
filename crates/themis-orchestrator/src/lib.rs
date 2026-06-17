@@ -39,6 +39,7 @@ pub mod llm_backend;
 pub mod orchestrator;
 pub mod packet;
 pub mod pdf;
+pub mod rekor_backend;
 pub mod room;
 pub mod state;
 pub mod tenants;
