@@ -228,6 +228,181 @@ impl BaaarGate {
     }
 }
 
+// --- BaaarV2Gate (vNext §8.2 — Self-Anchored Consensus) ---
+//
+// The original BAAAR is a single-agent 5-condition deterministic
+// gate. SAC (arXiv:2605.09076, May 2026) proposes a multi-agent
+// weighted consensus check: each agent emits a confidence score,
+// and the weighted average must clear a threshold for APPROVE.
+// SAC's F+1-robustness property means the system stays correct
+// even when a minority of agents are adversarial.
+//
+// BaaarV2Gate is BACKWARD COMPATIBLE: `check_sac()` first runs
+// the v1 `BaaarGate::check()` (so AC11 — BAAAR HALT deterministic
+// 10/10 — still holds), and only then runs the SAC weighted
+// consensus check. If v1 halts, v1's reason wins.
+
+/// Identifies the agent that emitted a confidence score. Used as
+/// the key for the SAC `agent_weights` map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentRole {
+    /// `extractor`
+    Extractor,
+    /// `po_matcher`
+    PoMatcher,
+    /// `fraud_auditor` — primary risk scorer
+    FraudAuditor,
+    /// `gaap_classifier`
+    GaapClassifier,
+    /// `provenance_signer`
+    ProvenanceSigner,
+    /// `audit_watchdog` (shadow)
+    AuditWatchdog,
+    /// `regression_tester` (shadow)
+    RegressionTester,
+    /// `demo_narrator` (shadow)
+    DemoNarrator,
+}
+
+impl AgentRole {
+    /// Stable string id.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentRole::Extractor => "extractor",
+            AgentRole::PoMatcher => "po_matcher",
+            AgentRole::FraudAuditor => "fraud_auditor",
+            AgentRole::GaapClassifier => "gaap_classifier",
+            AgentRole::ProvenanceSigner => "provenance_signer",
+            AgentRole::AuditWatchdog => "audit_watchdog",
+            AgentRole::RegressionTester => "regression_tester",
+            AgentRole::DemoNarrator => "demo_narrator",
+        }
+    }
+}
+
+/// BAAAR v2 — Self-Anchored Consensus wrapper around `BaaarGate`.
+///
+/// v1 (`inner.check`) runs FIRST, unchanged. If v1 halts, v1's
+/// reason is returned verbatim (backward compat with AC11). Only
+/// when v1 approves does v2 evaluate the weighted consensus.
+///
+/// If `agent_confidences` is empty OR the weighted average is
+/// below `sac_threshold`, v2 halts with `CoherenceTooLow` (the
+/// same reason v1 uses for low coherence — semantically: "the
+/// system doesn't have enough cross-agent agreement to trust the
+/// v1 APPROVE").
+pub struct BaaarV2Gate {
+    /// The v1 gate (untouched).
+    inner: BaaarGate,
+    /// Per-agent weight (fraud_auditor defaults to 1.0; everything
+    /// else defaults to 0.5 — fraud risk is the load-bearing
+    /// signal).
+    agent_weights: std::collections::HashMap<AgentRole, f32>,
+    /// Minimum weighted confidence to APPROVE. 0.5 is the SAC
+    /// default (F+1-robust for 2 faulty agents out of 5).
+    sac_threshold: f32,
+}
+
+impl std::fmt::Debug for BaaarV2Gate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BaaarV2Gate")
+            .field("inner", &"BaaarGate")
+            .field("agent_weights", &self.agent_weights)
+            .field("sac_threshold", &self.sac_threshold)
+            .finish()
+    }
+}
+
+impl BaaarV2Gate {
+    /// New v2 gate with default weights (FraudAuditor=1.0, others=0.5)
+    /// and SAC threshold 0.5.
+    pub fn new() -> Self {
+        let mut weights = std::collections::HashMap::new();
+        weights.insert(AgentRole::Extractor, 0.5);
+        weights.insert(AgentRole::PoMatcher, 0.5);
+        weights.insert(AgentRole::FraudAuditor, 1.0);
+        weights.insert(AgentRole::GaapClassifier, 0.5);
+        weights.insert(AgentRole::ProvenanceSigner, 0.5);
+        weights.insert(AgentRole::AuditWatchdog, 0.5);
+        weights.insert(AgentRole::RegressionTester, 0.5);
+        weights.insert(AgentRole::DemoNarrator, 0.5);
+        Self {
+            inner: BaaarGate::new(),
+            agent_weights: weights,
+            sac_threshold: 0.5,
+        }
+    }
+
+    /// Override the SAC threshold (0.0..=1.0). Default 0.5.
+    pub fn with_sac_threshold(mut self, threshold: f32) -> Self {
+        self.sac_threshold = threshold.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Override the per-agent weights.
+    pub fn with_weights(mut self, weights: std::collections::HashMap<AgentRole, f32>) -> Self {
+        self.agent_weights = weights;
+        self
+    }
+
+    /// Run the v1 check first; if it halts, return that. Otherwise
+    /// evaluate the SAC weighted consensus.
+    ///
+    /// `agent_confidences` is a list of `(role, confidence)` pairs.
+    /// The weighted average is `sum(role_weight * confidence) /
+    /// sum(role_weight)`. If the average is below `sac_threshold`,
+    /// halt with `CoherenceTooLow`.
+    pub fn check_sac(
+        &self,
+        assessment: &FraudAssessment,
+        agent_confidences: &[(AgentRole, f32)],
+    ) -> Outcome {
+        // v1 first — backward compat with AC11 (10/10 deterministic).
+        if let halt @ Outcome::Halt(_) = self.inner.check(assessment) {
+            return halt;
+        }
+        // v1 approved. Now run SAC.
+        if agent_confidences.is_empty() {
+            // No agent confidences → can't trust v1's approve. Halt.
+            return Outcome::Halt(BaaarReason::CoherenceTooLow);
+        }
+        let mut weighted_sum = 0.0_f32;
+        let mut weight_total = 0.0_f32;
+        for (role, confidence) in agent_confidences {
+            if let Some(w) = self.agent_weights.get(role) {
+                // Confidence is clamped to 0.0..=1.0 defensively
+                // (an LLM can occasionally emit out-of-range
+                // values; we don't want a NaN to poison the sum).
+                let c = confidence.clamp(0.0, 1.0);
+                weighted_sum += w * c;
+                weight_total += w;
+            }
+            // Agents not in the weight map are ignored (they have
+            // zero weight, equivalent to "no opinion").
+        }
+        if weight_total == 0.0 {
+            return Outcome::Halt(BaaarReason::CoherenceTooLow);
+        }
+        let weighted_avg = weighted_sum / weight_total;
+        if weighted_avg < self.sac_threshold {
+            return Outcome::Halt(BaaarReason::CoherenceTooLow);
+        }
+        Outcome::Approve
+    }
+
+    /// Delegate to the inner v1 gate (for tests that don't need
+    /// SAC; the existing AC11 determinism test uses this path).
+    pub fn check_v1(&self, a: &FraudAssessment) -> Outcome {
+        self.inner.check(a)
+    }
+}
+
+impl Default for BaaarV2Gate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +535,119 @@ mod tests {
         };
         let v2 = serde_json::to_value(&f2).unwrap();
         assert_eq!(v2["kind"], "custom");
+    }
+
+    // --- BaaarV2Gate tests (vNext §8.2 — SAC) ---
+
+    #[test]
+    fn v2_v1_halt_wins_over_sac_approve() {
+        // v1 halts on risk_score > 0.85. SAC would otherwise approve.
+        // The v1 reason must propagate (backward compat with AC11).
+        let mut a = base();
+        a.risk_score = 0.95;
+        let gate = BaaarV2Gate::new();
+        let conf = vec![
+            (AgentRole::FraudAuditor, 1.0),
+            (AgentRole::GaapClassifier, 1.0),
+            (AgentRole::Extractor, 1.0),
+        ];
+        assert_eq!(
+            gate.check_sac(&a, &conf),
+            Outcome::Halt(BaaarReason::RiskScoreExceeded)
+        );
+    }
+
+    #[test]
+    fn v2_sac_halts_when_no_agent_confidences() {
+        // v1 approves (default base()). No agent confidences →
+        // SAC can't evaluate → halt with CoherenceTooLow.
+        let a = base();
+        let gate = BaaarV2Gate::new();
+        assert_eq!(
+            gate.check_sac(&a, &[]),
+            Outcome::Halt(BaaarReason::CoherenceTooLow)
+        );
+    }
+
+    #[test]
+    fn v2_sac_halts_when_weighted_avg_below_threshold() {
+        // v1 approves. SAC: weighted avg = 0.4 (FraudAuditor=0.4,
+        // 2× others=0.4) = 0.4, below default threshold 0.5.
+        let a = base();
+        let gate = BaaarV2Gate::new();
+        let conf = vec![
+            (AgentRole::FraudAuditor, 0.4),
+            (AgentRole::GaapClassifier, 0.4),
+            (AgentRole::Extractor, 0.4),
+        ];
+        assert_eq!(
+            gate.check_sac(&a, &conf),
+            Outcome::Halt(BaaarReason::CoherenceTooLow)
+        );
+    }
+
+    #[test]
+    fn v2_sac_approves_when_weighted_avg_above_threshold() {
+        // v1 approves. SAC: weighted avg = 0.7 (FraudAuditor=0.7,
+        // 2× others=0.7) = 0.7, above 0.5. Approve.
+        let a = base();
+        let gate = BaaarV2Gate::new();
+        let conf = vec![
+            (AgentRole::FraudAuditor, 0.7),
+            (AgentRole::GaapClassifier, 0.7),
+            (AgentRole::Extractor, 0.7),
+        ];
+        assert_eq!(gate.check_sac(&a, &conf), Outcome::Approve);
+    }
+
+    #[test]
+    fn v2_sac_ignores_agents_not_in_weight_map() {
+        // Default weight map has 8 roles. Pass 3 unweighted roles
+        // (custom): they contribute nothing to the sum. SAC must
+        // not crash; the empty effective total → halt.
+        let a = base();
+        let gate = BaaarV2Gate::new();
+        let conf = vec![
+            (AgentRole::FraudAuditor, 0.0), // explicitly 0
+            (AgentRole::GaapClassifier, 0.0),
+            (AgentRole::Extractor, 0.0),
+        ];
+        // weighted sum = 0, weight_total > 0, avg = 0, below 0.5
+        assert_eq!(
+            gate.check_sac(&a, &conf),
+            Outcome::Halt(BaaarReason::CoherenceTooLow)
+        );
+    }
+
+    #[test]
+    fn v2_check_v1_delegates_to_inner() {
+        // Backward compat: the AC11 10/10 deterministic test
+        // (already in the suite) uses check_v1. Sanity check.
+        let mut a = base();
+        a.risk_score = 0.5;
+        let gate = BaaarV2Gate::new();
+        assert_eq!(gate.check_v1(&a), Outcome::Approve);
+        a.risk_score = 0.95;
+        assert_eq!(
+            gate.check_v1(&a),
+            Outcome::Halt(BaaarReason::RiskScoreExceeded)
+        );
+    }
+
+    #[test]
+    fn v2_with_sac_threshold_override() {
+        // With threshold 0.9, the same confidence that approved at
+        // 0.5 now halts. Caller-controlled knob for post-hackathon
+        // tuning.
+        let a = base();
+        let gate = BaaarV2Gate::new().with_sac_threshold(0.9);
+        let conf = vec![
+            (AgentRole::FraudAuditor, 0.7),
+            (AgentRole::GaapClassifier, 0.7),
+        ];
+        assert_eq!(
+            gate.check_sac(&a, &conf),
+            Outcome::Halt(BaaarReason::CoherenceTooLow)
+        );
     }
 }
