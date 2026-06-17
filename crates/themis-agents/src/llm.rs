@@ -419,6 +419,42 @@ pub fn shared(backend: impl LlmBackend) -> Arc<dyn LlmBackend> {
     Arc::new(backend)
 }
 
+/// Heterogeneous multi-agent model routing (vNext §2.1 / §8.1).
+///
+/// Adversarial-robustness research (Frontiers 2026) shows that
+/// homogeneous backbones are consensus traps — a single adversarial
+/// agent can drop system accuracy 10-40% by amplifying wrong
+/// consensus. Heterogeneous backbones (different model lineages)
+/// resist this: `FraudAuditor` uses Qwen3-Coder-30B (reasoning),
+/// `GaapClassifier` uses Llama-3.3-70B (different lineage for
+/// accounting reasoning), `Extractor` uses Qwen3-30B dense (JSON
+/// extraction, schema-constrained).
+///
+/// Deterministic agents (`po_matcher`, `provenance_signer`) don't
+/// need an LLM. Shadow agents (`demo_narrator`, `audit_watchdog`,
+/// `regression_tester`) get the cheap Qwen3-30B (or any mock in
+/// test mode).
+///
+/// `None` means "no LLM needed; agent is deterministic". Callers
+/// pass the returned id to `FeatherlessBackend::from_env(name)` and
+/// fall back to `MockLlmProvider` if the env var is unset.
+pub fn model_id_for_agent(agent_name: &str) -> Option<&'static str> {
+    match agent_name {
+        // Heterogeneous core: 3 different lineages.
+        "fraud_auditor" => Some("Qwen/Qwen3-Coder-30B-A3B-Instruct"),
+        "gaap_classifier" => Some("meta-llama/Llama-3.3-70B-Instruct"),
+        "extractor" => Some("Qwen/Qwen3-30B"),
+        // Shadow agents: cheap dense model.
+        "demo_narrator" | "audit_watchdog" | "regression_tester" => {
+            Some("Qwen/Qwen3-30B")
+        }
+        // Deterministic: no LLM.
+        "po_matcher" | "provenance_signer" => None,
+        // Unknown agent: don't guess.
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,6 +555,58 @@ mod tests {
         let mock = MockLlmProvider::new("m");
         let arc: Arc<dyn LlmBackend> = shared(mock);
         assert_eq!(arc.model_id(), "m");
+    }
+
+    #[test]
+    fn heterogeneous_routing_maps_to_three_lineages() {
+        // Per vNext §2.1: 3 different model lineages for the 3
+        // core LLM-driven agents. This is the heterogeneity
+        // property — equal lineages would defeat the purpose.
+        let fraud = model_id_for_agent("fraud_auditor").unwrap();
+        let gaap = model_id_for_agent("gaap_classifier").unwrap();
+        let extractor = model_id_for_agent("extractor").unwrap();
+        assert!(fraud.starts_with("Qwen/Qwen3-Coder"));
+        assert!(gaap.starts_with("meta-llama/Llama"));
+        assert!(extractor.starts_with("Qwen/Qwen3-30B"));
+        // Heterogeneity invariant: at least 2 distinct model
+        // families (Qwen vs Llama).
+        assert!(
+            !fraud.contains("Llama") && gaap.contains("Llama"),
+            "FraudAuditor and GaapClassifier must use different lineages for adversarial robustness"
+        );
+    }
+
+    #[test]
+    fn heterogeneous_routing_shadow_agents_get_cheap_model() {
+        // Shadow agents share the cheap dense Qwen3-30B (no
+        // heterogeneity needed; they're observers).
+        assert_eq!(
+            model_id_for_agent("demo_narrator"),
+            Some("Qwen/Qwen3-30B")
+        );
+        assert_eq!(
+            model_id_for_agent("audit_watchdog"),
+            Some("Qwen/Qwen3-30B")
+        );
+        assert_eq!(
+            model_id_for_agent("regression_tester"),
+            Some("Qwen/Qwen3-30B")
+        );
+    }
+
+    #[test]
+    fn heterogeneous_routing_deterministic_agents_have_no_llm() {
+        // po_matcher + provenance_signer are pure-Rust deterministic
+        // — no LLM cost, no failure mode.
+        assert_eq!(model_id_for_agent("po_matcher"), None);
+        assert_eq!(model_id_for_agent("provenance_signer"), None);
+    }
+
+    #[test]
+    fn heterogeneous_routing_unknown_agent_returns_none() {
+        // Defensive: unknown agent names don't get a guessed LLM.
+        assert_eq!(model_id_for_agent("not_a_real_agent"), None);
+        assert_eq!(model_id_for_agent(""), None);
     }
 
     // --- FeatherlessBackend tests (US-08) ---
