@@ -222,12 +222,16 @@ impl Agent for LlmStubAgent {
     }
 }
 
-/// Build the standard 8-agent HashMap wired to a mock LLM. Used by
-/// both the integration test and the bench binary. If `counter` is
-/// `Some`, all 8 agents bump it on every LLM call.
+/// Build the standard 8-agent HashMap wired to a per-agent LLM
+/// backend. The map is `agent_name -> Arc<dyn LlmBackend>`, so
+/// different agents can hit different providers (Featherless
+/// for most, AIML API for FraudAuditor, deterministic for
+/// the signers). If `counter` is `Some`, all 8 agents bump it
+/// on every LLM call. Use [`build_default_dispatch`] for the
+/// canonical THEMIS multi-model mapping.
 #[allow(unused_variables)]
 pub fn build_stub_agents(
-    mock_llm: Arc<dyn LlmBackend>,
+    backends: HashMap<String, Arc<dyn LlmBackend>>,
     counter: Option<Arc<AtomicU32>>,
 ) -> HashMap<String, Arc<dyn Agent>> {
     let names = [
@@ -242,16 +246,147 @@ pub fn build_stub_agents(
     ];
     let mut agents: HashMap<String, Arc<dyn Agent>> = HashMap::new();
     for name in names {
+        // Per-agent LLM: fall back to a MockLlmProvider if the
+        // dispatch map doesn't include this agent (e.g. tests
+        // that wire only one mock).
+        let llm = backends
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| {
+                themis_agents::llm::shared(themis_agents::llm::MockLlmProvider::new(
+                    "mock-fallback",
+                ))
+            });
         agents.insert(
             name.to_string(),
             Arc::new(LlmStubAgent {
                 name,
-                llm: mock_llm.clone(),
+                llm,
                 input_token_counter: counter.clone(),
             }),
         );
     }
     agents
+}
+
+/// Convenience: tests that wire a single mock LLM use this
+/// to get a per-agent dispatch map where every agent points at
+/// the same backend. The full multi-model dispatch is
+/// [`build_default_dispatch`].
+pub fn build_stub_agents_with_mock(
+    mock_llm: Arc<dyn LlmBackend>,
+    counter: Option<Arc<AtomicU32>>,
+) -> HashMap<String, Arc<dyn Agent>> {
+    let mut dispatch: HashMap<String, Arc<dyn LlmBackend>> = HashMap::new();
+    for name in [
+        "extractor",
+        "po_matcher",
+        "fraud_auditor",
+        "gaap_classifier",
+        "provenance_signer",
+        "demo_narrator",
+        "regression_tester",
+        "audit_watchdog",
+    ] {
+        dispatch.insert(name.to_string(), mock_llm.clone());
+    }
+    build_stub_agents(dispatch, counter)
+}
+
+/// Canonical THEMIS multi-model dispatch. Honors the sponsor
+/// claims:
+///
+/// - AIML API kickoff (Valerie, 12 jun 2026): "different agents
+///   want different brains". `fraud_auditor` hits AIML API for
+///   reasoning quality.
+/// - Featherless kickoff (Isaac, 12 jun 2026): "30,000+ open
+///   source models". All other LLM-driven agents hit Featherless
+///   with open-source models.
+/// - "switch models is changing just one string": the model
+///   per-agent is overridable via the `THEMIS_LLM_MODEL_<AGENT>`
+///   env vars (Track 23).
+///
+/// If `AIML_API_KEY` is unset, the FraudAuditor falls back to
+/// the Featherless dispatch (graceful degradation). If both are
+/// unset, all LLM-driven agents fall back to `MockLlmProvider`
+/// (test mode / no-cost demo).
+pub fn build_default_dispatch() -> HashMap<String, Arc<dyn LlmBackend>> {
+    use themis_agents::llm::{
+        shared, AIMLAPIBackend, FeatherlessBackend, MockLlmProvider,
+    };
+    let mut m: HashMap<String, Arc<dyn LlmBackend>> = HashMap::new();
+
+    // --- 5 Featherless (open source) agents ---
+    // Extractor: Qwen2.5-Coder-32B is the canonical JSON-extraction
+    // model (schema-constrained output, open weights, $0 marginal
+    // with the Featherless flat-rate plan).
+    m.insert(
+        "extractor".into(),
+        FeatherlessBackend::from_env("Qwen/Qwen2.5-Coder-32B-Instruct")
+            .map(shared)
+            .unwrap_or_else(|| shared(MockLlmProvider::new("featherless-extractor"))),
+    );
+    // GAAP Classifier: Qwen3-32B has the strongest multilingual
+    // + accounting reasoning among the open-source models on
+    // Featherless (Qwen3 generation, April 2026).
+    m.insert(
+        "gaap_classifier".into(),
+        FeatherlessBackend::from_env("Qwen/Qwen3-32B")
+            .map(shared)
+            .unwrap_or_else(|| shared(MockLlmProvider::new("featherless-gaap"))),
+    );
+    // AuditWatchdog + RegressionTester: Qwen3-Coder-30B-A3B
+    // is the workhorse code-analysis model.
+    m.insert(
+        "audit_watchdog".into(),
+        FeatherlessBackend::from_env("Qwen/Qwen3-Coder-30B-A3B-Instruct")
+            .map(shared)
+            .unwrap_or_else(|| shared(MockLlmProvider::new("featherless-watchdog"))),
+    );
+    m.insert(
+        "regression_tester".into(),
+        FeatherlessBackend::from_env("Qwen/Qwen3-Coder-30B-A3B-Instruct")
+            .map(shared)
+            .unwrap_or_else(|| shared(MockLlmProvider::new("featherless-regression"))),
+    );
+    // DemoNarrator: Qwen2.5-1.5B is the cheapest open-source
+    // model for prose summary. Ultra-low token cost.
+    m.insert(
+        "demo_narrator".into(),
+        FeatherlessBackend::from_env("Qwen/Qwen2.5-1.5B-Instruct")
+            .map(shared)
+            .unwrap_or_else(|| shared(MockLlmProvider::new("featherless-narrator"))),
+    );
+
+    // --- 1 AIML API (closed source) agent ---
+    // FraudAuditor: claude-sonnet-4.5 via AIML API gateway.
+    // Reasoning quality matters most here. Falls back to
+    // Featherless Qwen3-32B if AIML_API_KEY is unset.
+    m.insert(
+        "fraud_auditor".into(),
+        AIMLAPIBackend::from_env("anthropic/claude-sonnet-4.5")
+            .map(shared)
+            .or_else(|| {
+                FeatherlessBackend::from_env("Qwen/Qwen3-32B")
+                    .map(shared)
+            })
+            .unwrap_or_else(|| shared(MockLlmProvider::new("aimlapi-or-featherless-fraud"))),
+    );
+
+    // --- 2 deterministic agents (no LLM) ---
+    // po_matcher + provenance_signer don't fire LLM calls
+    // (deterministic PO lookup + Ed25519 sign). They get a
+    // MockLlmProvider that the LlmStubAgent will never call.
+    m.insert(
+        "po_matcher".into(),
+        shared(MockLlmProvider::new("deterministic-po-matcher")),
+    );
+    m.insert(
+        "provenance_signer".into(),
+        shared(MockLlmProvider::new("deterministic-provenance-signer")),
+    );
+
+    m
 }
 
 /// Build a fully-wired orchestrator with the 5-fixture mock LLM
@@ -284,7 +419,23 @@ pub fn build_orchestrator(
             )
             .with_default(stub_default_response("mock-test")),
     );
-    let agents = build_stub_agents(mock_llm, counter);
+    // Tests use a single mock LLM shared across all agents.
+    // The new build_stub_agents takes a per-agent dispatch map;
+    // we wrap the mock as the catch-all for every agent.
+    let mut dispatch = HashMap::new();
+    for name in [
+        "extractor",
+        "po_matcher",
+        "fraud_auditor",
+        "gaap_classifier",
+        "provenance_signer",
+        "demo_narrator",
+        "regression_tester",
+        "audit_watchdog",
+    ] {
+        dispatch.insert(name.to_string(), mock_llm.clone());
+    }
+    let agents = build_stub_agents(dispatch, counter);
     let rooms: Arc<dyn crate::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     Orchestrator::new_with_rekor(rooms, agents, tenants, rekor)

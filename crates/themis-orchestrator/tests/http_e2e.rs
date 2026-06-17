@@ -83,7 +83,7 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
                 model_id: "e2e-mock".to_string(),
             }),
     );
-    let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm.clone(), None);
+    let agents = themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let orch = Orchestrator::new_with_rekor(
@@ -567,7 +567,7 @@ async fn e2e_halting_fixtures_produce_halted_packet() {
                     model_id: "e2e-sse-mock".to_string(),
                 }),
         );
-        let agents = themis_orchestrator::test_support::build_stub_agents(mock_llm.clone(), None);
+        let agents = themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm.clone(), None);
         let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
         let tenants = Arc::new(TenantRegistry::with_default_tenants());
         let orch = Orchestrator::new_with_rekor(

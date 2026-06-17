@@ -99,7 +99,21 @@ fn orchestrator_for(f: &DemoInvoice, counter: Arc<AtomicU32>) -> (Orchestrator, 
             )
             .with_default(stub_default_response("mock-bench")),
     );
-    let agents = build_stub_agents(mock_llm, Some(counter.clone()));
+    // Per-agent dispatch map (bench uses a single shared mock).
+    let mut dispatch = std::collections::HashMap::new();
+    for name in [
+        "extractor",
+        "po_matcher",
+        "fraud_auditor",
+        "gaap_classifier",
+        "provenance_signer",
+        "demo_narrator",
+        "regression_tester",
+        "audit_watchdog",
+    ] {
+        dispatch.insert(name.to_string(), mock_llm.clone());
+    }
+    let agents = build_stub_agents(dispatch, Some(counter.clone()));
     let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     (Orchestrator::new(rooms, agents, tenants), counter)
