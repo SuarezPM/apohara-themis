@@ -98,6 +98,17 @@ impl std::fmt::Debug for Orchestrator {
 impl Orchestrator {
     /// Build a new orchestrator without a Rekor client. Equivalent
     /// to `new_with_rekor(..., None)`.
+    ///
+    /// **Trust gate (C-04 / G20 / ASI07):** every Band message
+    /// received by the orchestrator MUST pass through
+    /// `themis_band_client::trust_gate::TrustGate::check()` before
+    /// reaching the agent logic. The gate verifies the message's
+    /// Ed25519 signature against its `did:key` and rejects any
+    /// sender not in the trust set. The orchestrator currently
+    /// does not own a `TrustGate`; cross-framework peer integration
+    /// in C-12 will add the field and wire it into `BandRoom`
+    /// `post_message` / `watch_mentions` callbacks. Until then,
+    /// peer messages are processed unverified.
     pub fn new(
         rooms: Arc<dyn BandRoom>,
         agents: HashMap<String, Arc<dyn Agent>>,

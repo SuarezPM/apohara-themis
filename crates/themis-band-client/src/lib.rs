@@ -20,6 +20,8 @@ pub fn version() -> &'static str {
 pub mod client;
 pub mod error;
 pub mod python_bridge;
+pub mod signed_message;
+pub mod trust_gate;
 pub mod types;
 pub mod ws;
 
