@@ -36,7 +36,7 @@ multi-region replication). Those are listed in
 | BLAKE3 hash chain | in-memory + serialized into each Evidence Packet | HIGH — proof of decision ordering |
 | Per-agent Ed25519 signature | serialized into each `ChainEntry` | HIGH — non-repudiation per agent |
 | BAAAR decision log | in-memory, sealed into Evidence Packet | HIGH — the regulator's primary audit artifact |
-| Rekor transparency log entry | planned (post-hackathon: real via sigstore-verify 0.8) | MEDIUM — tamper evidence for the packet |
+| Rekor transparency log entry | Rekor v2 gRPC client, `SealedPacket.rekor_entry: Option<RekorEntry>` | MEDIUM — tamper evidence for the packet |
 | RFC 3161 timestamp | planned (post-hackathon: real TSA) | MEDIUM — temporal anchoring of the decision |
 | Evidence Packet JSON | `/packets/:id/json` endpoint | MEDIUM — public-readable, integrity-checked |
 | Evidence Packet PDF | `/packets/:id/pdf` endpoint | MEDIUM — public-readable, includes QR to verifier |
@@ -141,6 +141,34 @@ multi-region replication). Those are listed in
 - **Reference:** DORA Art. 9 (ICT resilience), NIST AI RMF
   MANAGE.
 
+## Transparency log anchoring
+
+The Evidence Packet is anchored in the Rekor v2 transparency log via
+the v2 gRPC client in `crates/themis-evidence/src/rekor.rs`. The
+client speaks the `dev.sigstore.rekor.v2.Rekor` service (see
+`crates/themis-evidence/proto/rekor/v2/rekor.proto` for the
+consolidated proto subset — we vendor only the messages THEMIS
+actually submits; the full rekor-tiles surface would drag in the
+googleapis annotations tree). The default endpoint is
+`log2025-1.rekor.sigstore.dev:443` and is hardcoded for the demo;
+TUF SigningConfig rotation (picking up new signing keys from a
+signed TUF metadata bundle) is a post-hackathon follow-up.
+
+On every seal, the orchestrator calls `RekorV2Client::anchor(...)`
+and stores the returned `TransparencyLogEntry` on
+`SealedPacket.rekor_entry: Option<RekorEntry>`. **Graceful-degrade
+contract:** if Rekor is unreachable, returns an error, or the
+`THEMIS_REKOR_MODE` env var is set to `mock`, the orchestrator logs
+a warning and the run continues — the Evidence Packet seals
+without a transparency-log anchor, and `SealedPacket.rekor_entry`
+is `None`. This matches the original pre-v2 behavior (audit H-10
+closure) and is exercised by the integration test added in A6.
+Design rationale: the vNext roadmap in `(adr/0010-rekor-v2-client.md)`
+weighed the binary-size cost of `tonic`+`prost` (~3–5 MB) and the
+churn risk of the v2 proto wire against the audit-trail benefit;
+the graceful-degrade path keeps the demo byte-identical when Rekor
+is unreachable.
+
 ## Residual risks (consolidated)
 
 These are the open items a regulator or auditor would flag as
@@ -151,10 +179,14 @@ fictitious tenants), but a production deployment must address all
 
 1. **Baked keys, not KMS-issued.** T4. A production deployment
    must load keys from a KMS at boot.
-2. **Mock Rekor, not real transparency log.** T2. The current
-   `CosignRekorClient::verify` is a no-op (audit H-10). Post-hackathon
-   migration to `sigstore-verify 0.8` with `TrustedRoot::from_embedded`
-   is planned (per the vNext roadmap).
+2. **Rekor v2 client uses a hardcoded endpoint, no TUF
+   SigningConfig rotation.** T2. The v2 gRPC client points at
+   `log2025-1.rekor.sigstore.dev:443` (the `dev.sigstore.rekor.v2.Rekor`
+   service) by default; the bundle is hardcoded. TUF SigningConfig
+   rotation — picking up new signing keys from a signed TUF metadata
+   bundle — is a post-hackathon follow-up. Mitigation in production:
+   switch to `sigstore-trust-root` with `TrustedRoot::from_tuf` so the
+   client follows signed rotation events.
 3. **Mock RFC 3161, not real TSA.** T2. `MockTimestampAuthority::verify`
    returns true unconditionally (audit H-11). Post-hackathon: real
    TSA integration.

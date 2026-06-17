@@ -35,6 +35,14 @@ Wayne Enterprises).
   signature; `themis-verify` validates offline (AC13).
 - **BLAKE3 chain**: sequence-monotonic, `prev_hash` linked, canonic
   encoding. `HashChain` in themis-evidence.
+- **Rekor v2 anchor**: the seal step calls `RekorV2Client::anchor`
+  against the `dev.sigstore.rekor.v2.Rekor` service
+  (`log2025-1.rekor.sigstore.dev:443` by default) and stores the
+  returned `TransparencyLogEntry` on
+  `SealedPacket.rekor_entry: Option<RekorEntry>`. On unreachable
+  /error, the orchestrator logs a warning and continues —
+  `rekor_entry` is `None` in that case. Selected via
+  `THEMIS_REKOR_MODE=mock|v2|cosign` (default `mock`).
 - **Public demo**: themis.apohara.dev on Vercel + Supabase.
 
 ## 3. Module map (`crates/themis-orchestrator/src/`)
@@ -84,8 +92,10 @@ Total: -1534 LOC.
 - **Rate limit on POST /invoices** (planned for C-4 in audit, deferred —
   would need a per-IP `tower::limit::RateLimit` wrap that conflicts
   with axum's `Router::layer` Clone bound; revisit in v2 with `axum-extra`).
-- **Real Rekor** transparency log (current: mock; `CosignRekorClient::verify`
-  is a no-op per audit H-10).
+- **TUF SigningConfig rotation** for the Rekor v2 client (current:
+  hardcoded endpoint `log2025-1.rekor.sigstore.dev:443` + the
+  bundled trust root; rotation via `sigstore-trust-root`'s
+  `TrustedRoot::from_tuf` is post-hackathon).
 - **Real RFC 3161 timestamp** (current: mock; `MockTimestampAuthority::verify`
   returns true unconditionally per audit H-11).
 - **`themis-compressor` wire** (deferred per docs/US-05-measurement-gate.md —
@@ -125,10 +135,13 @@ Total: -1534 LOC.
 - **Local MI300X endpoint** (vNext report §3.2 / §6). `THEMIS_LLM_ENDPOINT`
   env var pointing to a self-hosted vLLM Qwen3-235B-A22B
   instance. Deferred: no MI300X hardware in the demo environment.
-- **`sigstore-verify 0.8` migration** (vNext report §6). Replaces
-  the `cosign` shell-out with embedded trust root. Deferred:
-  ~250 LOC migration with binary bloat risk; current
-  `CosignRekorClient` is a working mock for the demo.
+- **`sigstore-verify 0.8` migration** for the Rekor v2 verify path
+  (vNext report §6). Now that `RekorV2Client::anchor` is live, the
+  equivalent verify-side migration (replacing the `cosign` shell-out
+  with embedded trust root for inclusion-proof validation) is the
+  remaining deferred item. Post-hackathon: ~250 LOC migration with
+  binary bloat risk; current `CosignRekorClient` is a working mock
+  for the verify path.
 
 ## 6. Commands
 
@@ -150,6 +163,13 @@ curl -X POST http://127.0.0.1:18765/invoices \
 # Verify offline
 ./target/release/themis-verify /tmp/packet.json /tmp/sig.hex
 ```
+
+### Rekor v2 env vars
+
+| Var | Default | Effect |
+|---|---|---|
+| `THEMIS_REKOR_MODE` | `mock` | `mock` = no Rekor call; `v2` = `RekorV2Client` (gRPC); `cosign` = `CosignRekorClient` shell-out. |
+| `THEMIS_REKOR_ENDPOINT` | `log2025-1.rekor.sigstore.dev:443` | Rekor v2 gRPC endpoint (test seam; override only for staging/private Rekor). |
 
 ## 7. Last-known good commit
 
