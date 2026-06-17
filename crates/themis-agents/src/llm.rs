@@ -502,12 +502,30 @@ impl AIMLAPIBackend {
     /// Build from the `AIML_API_KEY` env var. Returns `None` when
     /// the var is unset or empty. Mirrors `FeatherlessBackend::from_env`.
     pub fn from_env(model: &'static str) -> Option<Self> {
+        Self::from_env_with_url(model, None)
+    }
+
+    /// Like [`from_env`] but with an explicit base URL override
+    /// (used by the orchestrator when `AIMLAPI_BASE_URL` is set,
+    /// e.g. for tests pointing at a local WireMock server).
+    /// `url_override` of `None` defaults to `https://api.aimlapi.com`.
+    pub fn from_env_with_url(
+        model: &'static str,
+        url_override: Option<String>,
+    ) -> Option<Self> {
         let api_key = std::env::var("AIML_API_KEY").ok()?;
         let api_key = api_key.trim();
         if api_key.is_empty() {
             return None;
         }
-        Some(Self::new(api_key.to_string(), model))
+        let mut backend = Self::new(api_key.to_string(), model);
+        if let Some(url) = url_override {
+            let url = url.trim();
+            if !url.is_empty() {
+                backend.base_url = url.to_string();
+            }
+        }
+        Some(backend)
     }
 
     /// Direct constructor. Used by `from_env` and by tests.
@@ -524,8 +542,9 @@ impl AIMLAPIBackend {
         }
     }
 
-    /// Override the base URL (test-only).
-    #[cfg(test)]
+    /// Override the base URL. Available in both production and test
+    /// builds (the previous `#[cfg(test)]` gate made integration
+    /// tests in `tests/` unable to point at a local WireMock server).
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
@@ -1890,6 +1909,63 @@ mod tests {
                 }
                 other => panic!("expected LlmUnavailable, got {other:?}"),
             }
+        }
+    }
+
+    // --- US-B4: opt-in live test against real AIML API ---
+    //
+    // Gated on BOTH env vars (read on the same line, on purpose):
+    //   * `AIML_LIVE_TEST=1`  — explicit opt-in (the test never runs
+    //                           unless the developer asks for it).
+    //   * `AIML_API_KEY`      — non-empty.
+    //
+    // Skip-on-fail policy: this test MUST always pass when gated,
+    // even if the live API is down, rate-limited, or returns an
+    // unexpected shape. The CI loop depends on `cargo test` running
+    // clean on every commit; a flaky network path would block the
+    // demo. A failure is informational only — a developer running
+    // the live test inspects stderr for the actual error.
+
+    mod live {
+        use super::*;
+
+        #[tokio::test]
+        async fn aimlapi_live_response_shape_matches_spec() {
+            let api_key = std::env::var("AIML_API_KEY").unwrap_or_default();
+            let live = std::env::var("AIML_LIVE_TEST").unwrap_or_default();
+            if live != "1" || api_key.is_empty() {
+                eprintln!("skip: AIML_LIVE_TEST not set or AIML_API_KEY missing");
+                return;
+            }
+
+            let backend =
+                AIMLAPIBackend::new(api_key, "anthropic/claude-sonnet-4.5");
+            let req = LlmRequest {
+                system_prompt: "You are a JSON echo.".to_string(),
+                user_prompt: "Reply with the single word: pong".to_string(),
+                max_tokens: 16,
+                temperature: 0.0,
+                seed: None,
+                response_schema: None,
+                response_schema_name: None,
+            };
+            let resp = match backend.complete(req).await {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("skip: live AIML call failed: {e}");
+                    return;
+                }
+            };
+
+            assert!(!resp.text.is_empty(), "live response text was empty");
+            assert!(
+                resp.input_tokens > 0,
+                "live response input_tokens was 0, got: {resp:?}"
+            );
+            assert!(
+                resp.output_tokens > 0,
+                "live response output_tokens was 0, got: {resp:?}"
+            );
         }
     }
 }

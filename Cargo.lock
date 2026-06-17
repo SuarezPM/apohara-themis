@@ -2861,6 +2861,7 @@ dependencies = [
  "blake3",
  "chrono",
  "dashmap",
+ "futures-util",
  "hex",
  "hyper",
  "printpdf",

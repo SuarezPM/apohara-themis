@@ -33,6 +33,10 @@ pub const AIML_API_MODEL: &str = "anthropic/claude-sonnet-4.5";
 /// — open source, code analysis workhorse).
 pub const FEATHERLESS_MODEL: &str = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
 
+/// Default AIML API base URL. Overridable via `AIMLAPI_BASE_URL`
+/// env var (e.g. for tests pointing at a local WireMock server).
+pub const AIMLAPI_DEFAULT_BASE_URL: &str = "https://api.aimlapi.com";
+
 /// Which LLM provider the binary should use. The env-var value
 /// is the single string that switches providers (no code change).
 pub fn select_provider() -> &'static str {
@@ -75,7 +79,31 @@ pub fn resolve_model(provider: &str) -> &'static str {
 /// 2. `FEATHERLESS_API_KEY` set → Featherless
 /// 3. neither → MockLlmProvider
 pub fn select_backend() -> &'static str {
+    select_backend_with(None)
+}
+
+/// Like [`select_backend`] but with an explicit AIML API base URL
+/// override. When `aimlapi_base_url` is `None`, the function reads
+/// the `AIMLAPI_BASE_URL` env var (with `https://api.aimlapi.com`
+/// as the implicit default). The URL is honored only on the
+/// AIML-API code path; Featherless + mock ignore it. This is the
+/// test seam: the integration test in
+/// `tests/aiml_wiremock_e2e.rs` passes a WireMock URI here.
+pub fn select_backend_with(aimlapi_base_url: Option<String>) -> &'static str {
     let provider = select_provider();
+    // Resolve the AIML base URL: explicit arg wins, then env var,
+    // then the production default. Trimmed; empty → default.
+    let aiml_url: Option<String> = aimlapi_base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            std::env::var("AIMLAPI_BASE_URL")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
 
     // Explicit overrides.
     match provider {
@@ -85,7 +113,7 @@ pub fn select_backend() -> &'static str {
         }
         "aimlapi" => {
             let model = resolve_model("aimlapi");
-            if AIMLAPIBackend::from_env(model).is_some() {
+            if AIMLAPIBackend::from_env_with_url(model, aiml_url.clone()).is_some() {
                 eprintln!(
                     "[themis-orchestrator] LLM: AIMLAPIBackend({model}) — live (THEMIS_LLM_PROVIDER=aimlapi)"
                 );
@@ -114,7 +142,7 @@ pub fn select_backend() -> &'static str {
 
     // Auto: try AIML API first, then Featherless, then mock.
     let aiml_model = resolve_model("aimlapi");
-    if AIMLAPIBackend::from_env(aiml_model).is_some() {
+    if AIMLAPIBackend::from_env_with_url(aiml_model, aiml_url).is_some() {
         eprintln!(
             "[themis-orchestrator] LLM: AIMLAPIBackend({aiml_model}) — live (auto-selected)"
         );

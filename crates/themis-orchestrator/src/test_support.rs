@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+use crate::http::AppState;
 use crate::orchestrator::Orchestrator;
 use crate::room::MockBandRoom;
 use crate::tenants::TenantRegistry;
@@ -490,4 +491,16 @@ pub fn build_orchestrator_with_evidence(
     let rooms: Arc<dyn crate::room::BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     Orchestrator::with_evidence(rooms, agents, tenants, rekor, evidence)
+}
+
+/// Build the production-shaped `AppState` (alias for the
+/// `http::build_default_state` helper). Re-exported here so the
+/// integration test in `tests/aiml_wiremock_e2e.rs` doesn't need
+/// to import from a different module.
+pub fn build_default_state(
+    orch: Orchestrator,
+    room_concrete: Arc<crate::room::ScriptedBandRoom>,
+    model_id: String,
+) -> AppState {
+    crate::http::build_default_state(orch, room_concrete, model_id)
 }

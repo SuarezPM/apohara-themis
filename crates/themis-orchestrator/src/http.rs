@@ -73,6 +73,29 @@ pub struct AppState {
     pub model_id: String,
 }
 
+/// Build the production-shaped `AppState`. Used by `main()` and
+/// by integration tests (e.g. `tests/aiml_wiremock_e2e.rs`) that
+/// want the exact same wiring the binary produces. The
+/// `model_id` is the string the SSE stream advertises; the
+/// `room_concrete` is the live Band room the orchestrator
+/// `@mention`-routes through.
+pub fn build_default_state(
+    orch: Orchestrator,
+    room_concrete: std::sync::Arc<crate::room::ScriptedBandRoom>,
+    model_id: String,
+) -> AppState {
+    AppState {
+        orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(orch)),
+        event_bus: std::sync::Arc::new(crate::events::EventBus::new(1024)),
+        compliance: std::sync::Arc::new(themis_compliance::service::ComplianceService::new()),
+        reports: DashMap::new(),
+        packets: DashMap::new(),
+        sealed: DashMap::new(),
+        model_id,
+        band_room: Some(room_concrete),
+    }
+}
+
 /// Build the axum Router with all routes.
 ///
 /// `AppState` is wrapped in `Arc` before being installed as the axum

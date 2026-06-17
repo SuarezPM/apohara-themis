@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 // (FreeTSAAuthority is referenced by fully-qualified path in main.)
 use themis_orchestrator::fixtures::{load_all, DemoFixture};
-use themis_orchestrator::http::{build_router, AppState};
+use themis_orchestrator::http::build_router;
 use themis_orchestrator::llm_backend::select_backend;
 use themis_orchestrator::orchestrator::Orchestrator;
 use themis_orchestrator::rekor_backend;
@@ -130,17 +130,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         evidence_map,
     );
 
-    let state = AppState {
-        orchestrator: Arc::new(tokio::sync::Mutex::new(orch)),
-        event_bus: Arc::new(themis_orchestrator::events::EventBus::new(1024)),
-        compliance: Arc::new(themis_compliance::service::ComplianceService::new()),
-        reports: dashmap::DashMap::new(),
-        packets: dashmap::DashMap::new(),
-        sealed: dashmap::DashMap::new(),
-        model_id: model_id.to_string(),
-        band_room: Some(room_concrete.clone()),
-    };
-
+    let state = themis_orchestrator::http::build_default_state(
+        orch,
+        room_concrete.clone(),
+        model_id.to_string(),
+    );
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     eprintln!("[themis-orchestrator] listening on {bind}");
