@@ -62,6 +62,15 @@ impl From<TenantError> for BandError {
     }
 }
 
+/// Bridge errors from the `themis-band-client` Python subprocess.
+/// Maps onto the orchestrator's transport variant so the trait
+/// impl in `RealBandRoom` can use `?` directly.
+impl From<themis_band_client::error::BandError> for BandError {
+    fn from(e: themis_band_client::error::BandError) -> Self {
+        BandError::Transport(format!("band-client: {e}"))
+    }
+}
+
 /// The trait the orchestrator uses to talk to Band. Backed in
 /// production by `themis-band-client` (subprocess wrapper); in
 /// tests by `MockBandRoom`.
@@ -293,6 +302,273 @@ impl BandRoom for ScriptedBandRoom {
         self.inner.close(room).await
     }
 }
+
+// ---------- RealBandRoom ----------
+//
+// Production Band client. Wraps the `PythonBandBridge` from
+// `themis-band-client` and speaks the 5 Band primitives the
+// Hackathon Guide requires: `band_create_chatroom`,
+// `band_lookup_peers`, `band_add_participant`,
+// `band_send_message`, `band_get_history`. Used when the
+// binary is started with `BAND_API_KEY=...` + `THEMIS_BAND_MODE=real`;
+// otherwise `ScriptedBandRoom` is the default (keeps the
+// 310+ tests deterministic and CI hermetic).
+//
+// Failure isolation: any bridge error degrades to
+// `BandError::Transport` so the orchestrator's BAAAR HALT
+// path stays independent of Band availability.
+
+use std::time::Duration;
+
+use themis_band_client::client::BandClient;
+use themis_band_client::python_bridge::PythonBandBridge;
+use themis_band_client::types::{AgentId, Message, MessageId, RoomId as BandRoomId};
+
+/// Production Band client backed by the `band-sdk[langgraph]==0.2.11`
+/// Python subprocess. Constructed by `RealBandRoom::connect`.
+pub struct RealBandRoom {
+    bridge: PythonBandBridge,
+    /// Cache of orchestrator-side `RoomId` -> Band-side chatroom id.
+    rooms: dashmap::DashMap<RoomId, BandRoomId>,
+}
+
+impl std::fmt::Debug for RealBandRoom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RealBandRoom")
+            .field("rooms_cached", &self.rooms.len())
+            .finish()
+    }
+}
+
+impl RealBandRoom {
+    /// Spawn the Python bridge (`band-sdk[langgraph]==0.2.11`) and
+    /// wrap it. The bridge is a persistent child process; we hold
+    /// a single instance per orchestrator (one Band room per
+    /// invoice flow, per-tenant).
+    pub fn connect(python_bin: &str, sdk_module: &str) -> Result<Arc<Self>, BandError> {
+        let bridge = PythonBandBridge::spawn(python_bin, sdk_module)?;
+        Ok(Arc::new(Self {
+            bridge,
+            rooms: dashmap::DashMap::new(),
+        }))
+    }
+
+    /// Wrap in an `Arc<dyn BandRoom>` for the orchestrator.
+    pub fn into_arc(self: Arc<Self>) -> Arc<dyn BandRoom> {
+        self
+    }
+
+    /// Number of rooms currently cached (for startup log + tests).
+    pub fn room_count(&self) -> usize {
+        self.rooms.len()
+    }
+
+    /// Total peer agents discovered at startup. Returns 0 when the
+    /// SDK doesn't expose a peer lookup; the call is best-effort.
+    pub fn peer_count(&self) -> usize {
+        // Best-effort: ask the bridge for peers, return 0 on any error.
+        let req = serde_json::json!({"op": "lookup_peers"});
+        match self.bridge.send_request(req) {
+            Ok(v) => v
+                .get("peers")
+                .and_then(|p| p.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
+            Err(_) => 0,
+        }
+    }
+
+    /// Helper: build the JSON request for a given op + payload.
+    fn request(op: &str, payload: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"op": op, "payload": payload})
+    }
+}
+
+#[async_trait]
+impl BandRoom for RealBandRoom {
+    async fn open(&self, tenant_id: &str, invoice_id: &str) -> Result<RoomId, BandError> {
+        // The orchestrator-side `RoomId` is derived deterministically
+        // from (tenant, invoice) so the SSE stream and the HTTP
+        // /rooms/:id/transcript endpoint agree on the id. The
+        // Band-side chatroom id is created on the Python side and
+        // cached for later `band_send_message` calls.
+        let namespace = uuid::Uuid::NAMESPACE_OID;
+        let orch_room = RoomId(uuid::Uuid::new_v5(
+            &namespace,
+            format!("{tenant_id}:{invoice_id}").as_bytes(),
+        ));
+        if self.rooms.contains_key(&orch_room) {
+            return Ok(orch_room);
+        }
+        let req = Self::request(
+            "create_chatroom",
+            serde_json::json!({
+                "tenant_id": tenant_id,
+                "invoice_id": invoice_id,
+            }),
+        );
+        let resp = self.bridge.send_request(req)?;
+        let chatroom_id = resp
+            .get("chatroom_id")
+            .and_then(|c| c.as_str())
+            .ok_or_else(|| {
+                BandError::Transport("create_chatroom: missing chatroom_id".to_string())
+            })?;
+        let band_room = BandRoomId::new(chatroom_id.to_string());
+        // Add the 5 agents as participants so @mention routing works.
+        for agent in [
+            "extractor",
+            "po_matcher",
+            "fraud_auditor",
+            "gaap_classifier",
+            "provenance_signer",
+        ] {
+            let add_req = Self::request(
+                "add_participant",
+                serde_json::json!({
+                    "chatroom_id": chatroom_id,
+                    "agent_id": agent,
+                }),
+            );
+            // Best-effort: if add_participant fails the room is still
+            // usable for direct posts.
+            let _ = self.bridge.send_request(add_req);
+        }
+        self.rooms.insert(orch_room, band_room);
+        Ok(orch_room)
+    }
+
+    async fn post_message(
+        &self,
+        room: RoomId,
+        _from_tenant: &str,
+        from_agent: &str,
+        body: &str,
+        mentions: Vec<String>,
+    ) -> Result<(), BandError> {
+        let band_room = self
+            .rooms
+            .get(&room)
+            .ok_or(BandError::UnknownRoom(room))?;
+        let req = Self::request(
+            "send_message",
+            serde_json::json!({
+                "chatroom_id": band_room.value().0,
+                "from_agent": from_agent,
+                "body": body,
+                "mentions": mentions,
+            }),
+        );
+        let _resp = self.bridge.send_request(req)?;
+        Ok(())
+    }
+
+    async fn history(&self, room: RoomId) -> Result<Vec<BandMessage>, BandError> {
+        let band_room = self
+            .rooms
+            .get(&room)
+            .ok_or(BandError::UnknownRoom(room))?;
+        let req = Self::request(
+            "get_history",
+            serde_json::json!({"chatroom_id": band_room.value().0}),
+        );
+        let resp = self.bridge.send_request(req)?;
+        let messages = resp
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .ok_or_else(|| BandError::Transport("get_history: missing messages".to_string()))?;
+        let mut out = Vec::with_capacity(messages.len());
+        for m in messages {
+            let from = m
+                .get("from_agent")
+                .and_then(|s| s.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let body = m
+                .get("body")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            let mentions: Vec<String> = m
+                .get("mentions")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let ts_ms = m.get("ts_ms").and_then(|t| t.as_i64()).unwrap_or_else(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0)
+            });
+            out.push(BandMessage {
+                from,
+                body,
+                mentions,
+                ts_ms,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn close(&self, room: RoomId) -> Result<(), BandError> {
+        if let Some((_, band_room)) = self.rooms.remove(&room) {
+            let req = Self::request(
+                "close_chatroom",
+                serde_json::json!({"chatroom_id": band_room.0}),
+            );
+            let _ = self.bridge.send_request(req);
+        }
+        Ok(())
+    }
+}
+
+/// Build a `RealBandRoom` and probe peer count. Used by the
+/// binary at startup to log the real-mode banner. Returns
+/// `None` when construction fails (caller falls back to
+/// `ScriptedBandRoom`).
+pub fn try_real_band_room() -> Option<Arc<RealBandRoom>> {
+    let api_key = std::env::var("BAND_API_KEY").ok()?;
+    if api_key.is_empty() {
+        return None;
+    }
+    let mode = std::env::var("THEMIS_BAND_MODE").unwrap_or_default();
+    if mode != "real" {
+        return None;
+    }
+    let python_bin = std::env::var("THEMIS_BAND_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    let sdk_module =
+        std::env::var("THEMIS_BAND_SDK_MODULE").unwrap_or_else(|_| "band_sdk".to_string());
+    match RealBandRoom::connect(&python_bin, &sdk_module) {
+        Ok(room) => {
+            let peers = room.peer_count();
+            eprintln!(
+                "[band] real mode: ready, peer_discovery={peers} (BAND_API_KEY set, THEMIS_BAND_MODE=real)"
+            );
+            Some(room)
+        }
+        Err(e) => {
+            eprintln!("[band] real mode: construction failed ({e}); falling back to scripted");
+            None
+        }
+    }
+}
+
+// `BandClient` is re-exported from the band-client crate for
+// the RealBandRoom construction. The trait reference is unused
+// at runtime — kept here so the import is preserved for future
+// use (e.g. `band_list_chatrooms`, `band_send_event`).
+#[allow(dead_code)]
+fn _trait_anchor(_: &dyn BandClient) {}
+
+// `AgentId`, `MessageId`, `Message` are referenced in the
+// bridge module to keep the import path explicit; the bridge
+// functions use these types in their JSON wire format.
+#[allow(dead_code)]
+fn _types_anchor(_: AgentId, _: MessageId, _: Message, _: Duration) {}
 
 #[cfg(test)]
 mod tests {

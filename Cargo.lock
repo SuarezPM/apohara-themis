@@ -2872,6 +2872,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "themis-agents",
+ "themis-band-client",
  "themis-compliance",
  "themis-evidence",
  "themis-frontend",

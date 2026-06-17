@@ -112,15 +112,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // BLAKE3 hash in the transparency log AND produces a
     // SealedPacket for the /json endpoint.
     //
-    // The Band room is `ScriptedBandRoom` (in-memory store with
-    // @mention routing visible to the demo transcript). The
-    // HTTP layer holds the concrete `Arc<ScriptedBandRoom>` so
-    // the `/rooms/:id/transcript` endpoint can serve the live
-    // agent debate. The orchestrator receives an
+    // The Band room defaults to `ScriptedBandRoom` (in-memory
+    // store with @mention routing visible to the demo
+    // transcript). When `BAND_API_KEY` is set AND
+    // `THEMIS_BAND_MODE=real`, the binary upgrades to
+    // `RealBandRoom` which speaks to the `band-sdk[langgraph]`
+    // Python subprocess. The HTTP layer holds the concrete
+    // `Arc<ScriptedBandRoom>` so the `/rooms/:id/transcript`
+    // endpoint can serve the live agent debate (in real mode
+    // we fall back to scripted for the in-memory transcript
+    // cache; the bridge is the source of truth for Band-side
+    // history). The orchestrator receives an
     // `Arc<dyn BandRoom>` (trait object) so the test path can
     // substitute a `MockBandRoom` without touching this code.
     let room_concrete = std::sync::Arc::new(themis_orchestrator::room::ScriptedBandRoom::new());
-    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = room_concrete.clone();
+    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = if let Some(real) =
+        themis_orchestrator::room::try_real_band_room()
+    {
+        eprintln!("[band] using RealBandRoom (subprocess bridge)");
+        real
+    } else {
+        eprintln!("[band] using ScriptedBandRoom (in-memory fallback)");
+        room_concrete.clone()
+    };
     let orch = Orchestrator::with_evidence(
         rooms,
         agents,
