@@ -7,7 +7,6 @@
 //! ```
 //!
 //! where `domain_tag = "themis-3.0-tenant-keyring-v1"`.
-//! ```
 //!
 //! The full BIP32 spec uses a 32-byte chain code, hardened/non-hardened
 //! derivation paths, and parent → child key iteration. This is a
@@ -25,7 +24,7 @@
 //!
 //! # Why not the full BIP32 chain-code machinery?
 //!
-//! A full HD wallet adds a chain code, a path syntax (`m/44'/0'/0'/0/0`),
+//! A full HD wallet adds a chain code, a path syntax (m/44'/0'/0'/0/0) in BIP32 notation,
 //! parent → child key iteration, and hardened derivation. We don't
 //! need any of that: a tenant has exactly one key, we never rotate
 //! mid-flight, and we don't have a hierarchy below the tenant. Adding
