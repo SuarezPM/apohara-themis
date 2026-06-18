@@ -58,6 +58,7 @@ use uuid::Uuid;
 
 use crate::events::Event;
 use crate::http::AppState;
+use crate::packet::PeerVerdict;
 
 /// JSON-RPC 2.0 protocol version string. Every envelope we
 /// accept must declare this; every response we emit includes it.
@@ -182,6 +183,7 @@ pub async fn post_a2a(
     match method.as_str() {
         "message/send" => handle_message_send(&state, id, req.params).await,
         "tasks/get" => handle_tasks_get(&state, id, req.params).await,
+        "peer_verdict/attach" => handle_peer_verdict_attach(id, req.params).await,
         "agent/authenticatedExtendedCard" => handle_extended_card(id).await,
         other => jsonrpc_error(
             StatusCode::NOT_FOUND,
@@ -386,6 +388,13 @@ async fn handle_tasks_get(_state: &Arc<AppState>, id: Value, params: Value) -> R
     };
     match a2a_tasks().get(&task_id) {
         Some(rec) => {
+            // Surface any peer verdicts attached to this packet
+            // (Story C-12 / G27 / FIX-4). The key is always
+            // present so the UI can render a stable "0 of N" state.
+            let peer_verdicts: Vec<Value> = a2a_peer_verdicts()
+                .get(&task_id)
+                .map(|v| v.iter().map(|p| json!(p)).collect())
+                .unwrap_or_default();
             let result = json!({
                 "task": {
                     "id": rec.packet_id.to_string(),
@@ -401,6 +410,7 @@ async fn handle_tasks_get(_state: &Arc<AppState>, id: Value, params: Value) -> R
                                     "invoice_id": rec.invoice_id,
                                     "run_id": rec.run_id.to_string(),
                                     "packet_id": rec.packet_id.to_string(),
+                                    "peer_verdicts": peer_verdicts,
                                 }
                             }]
                         }
@@ -430,6 +440,135 @@ async fn handle_extended_card(id: Value) -> Response {
         obj.insert("extended".to_string(), json!(true));
     }
     jsonrpc_success(StatusCode::OK, id, json!({"card": card}))
+}
+
+/// `peer_verdict/attach` — accept a structured fraud-auditor
+/// verdict from an external peer agent (PydanticAI, LangGraph,
+/// CrewAI) and stash it on the matching in-flight task. Story
+/// C-12 / G27 / FIX-4.
+async fn handle_peer_verdict_attach(id: Value, params: Value) -> Response {
+    let p = match params.as_object() {
+        Some(o) => o,
+        None => {
+            return jsonrpc_error(
+                StatusCode::BAD_REQUEST,
+                id,
+                ERR_INVALID_PARAMS,
+                "params must be an object".to_string(),
+                None,
+            );
+        }
+    };
+    let packet_id_str = match p.get("packet_id").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s,
+        _ => {
+            return jsonrpc_error(
+                StatusCode::BAD_REQUEST,
+                id,
+                ERR_INVALID_PARAMS,
+                "params.packet_id (string) is required".to_string(),
+                None,
+            );
+        }
+    };
+    let packet_id = match Uuid::parse_str(packet_id_str) {
+        Ok(u) => u,
+        Err(_) => {
+            return jsonrpc_error(
+                StatusCode::BAD_REQUEST,
+                id,
+                ERR_INVALID_PARAMS,
+                "params.packet_id must be a UUID".to_string(),
+                None,
+            );
+        }
+    };
+    if !a2a_tasks().contains_key(&packet_id) {
+        return jsonrpc_error(
+            StatusCode::NOT_FOUND,
+            id,
+            -32004,
+            format!("task {packet_id} not found"),
+            None,
+        );
+    }
+    let verdict_value = match p.get("verdict").and_then(|v| v.as_object()) {
+        Some(o) => o,
+        None => {
+            return jsonrpc_error(
+                StatusCode::BAD_REQUEST,
+                id,
+                ERR_INVALID_PARAMS,
+                "params.verdict (object) is required".to_string(),
+                None,
+            );
+        }
+    };
+    let agent = match verdict_value.get("agent").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => {
+            return jsonrpc_error(
+                StatusCode::BAD_REQUEST,
+                id,
+                ERR_INVALID_PARAMS,
+                "verdict.agent (string) is required".to_string(),
+                None,
+            );
+        }
+    };
+    let risk_score = match verdict_value.get("risk_score").and_then(|v| v.as_f64()) {
+        Some(s) => s,
+        None => {
+            return jsonrpc_error(
+                StatusCode::BAD_REQUEST,
+                id,
+                ERR_INVALID_PARAMS,
+                "verdict.risk_score (number) is required".to_string(),
+                None,
+            );
+        }
+    };
+    let recommendation = verdict_value
+        .get("recommendation")
+        .and_then(|v| v.as_str())
+        .unwrap_or("approve")
+        .to_string();
+    let findings = verdict_value
+        .get("findings")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+    let timestamp_ms = verdict_value
+        .get("timestamp_ms")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+
+    let verdict = PeerVerdict {
+        agent,
+        risk_score,
+        findings,
+        recommendation,
+        timestamp_ms,
+    };
+    a2a_peer_verdicts()
+        .entry(packet_id)
+        .or_default()
+        .push(verdict.clone());
+
+    jsonrpc_success(
+        StatusCode::OK,
+        id,
+        json!({
+            "attached": true,
+            "packet_id": packet_id.to_string(),
+            "agent": verdict.agent,
+            "count": a2a_peer_verdicts().get(&packet_id).map(|v| v.len()).unwrap_or(0),
+        }),
+    )
 }
 
 // --- Helpers ---
@@ -517,6 +656,16 @@ static A2A_TASKS: std::sync::OnceLock<DashMap<Uuid, A2ATaskRecord>> = std::sync:
 
 fn a2a_tasks() -> &'static DashMap<Uuid, A2ATaskRecord> {
     A2A_TASKS.get_or_init(DashMap::new)
+}
+
+/// In-process peer-verdict store. Keyed by packet_id; the value
+/// is a `Vec<PeerVerdict>` because multiple peer agents (PydanticAI,
+/// LangGraph, CrewAI) may attach to the same task.
+static A2A_PEER_VERDICTS: std::sync::OnceLock<DashMap<Uuid, Vec<PeerVerdict>>> =
+    std::sync::OnceLock::new();
+
+fn a2a_peer_verdicts() -> &'static DashMap<Uuid, Vec<PeerVerdict>> {
+    A2A_PEER_VERDICTS.get_or_init(DashMap::new)
 }
 
 #[derive(Debug, Clone)]
@@ -607,5 +756,78 @@ mod tests {
         assert_eq!(v["jsonrpc"], "2.0");
         assert_eq!(v["id"], 1);
         assert_eq!(v["error"]["code"], -32600);
+    }
+
+    /// Seed the global A2A task store with one task and return its
+    /// packet id. Test helper.
+    fn seed_task() -> Uuid {
+        let id = Uuid::new_v4();
+        a2a_tasks().insert(
+            id,
+            A2ATaskRecord {
+                run_id: Uuid::new_v4(),
+                tenant_id: "stark".to_string(),
+                invoice_id: "inv-test".to_string(),
+                packet_id: id,
+            },
+        );
+        id
+    }
+
+    async fn response_json(resp: axum::response::Response) -> Value {
+        let body = resp.into_body();
+        let bytes = axum::body::to_bytes(body, 64 * 1024)
+            .await
+            .map(|b| b.to_vec())
+            .unwrap_or_default();
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    }
+
+    #[tokio::test]
+    async fn peer_verdict_attach_stores_and_returns_envelope() {
+        let packet_id = seed_task();
+        let params = json!({
+            "packet_id": packet_id.to_string(),
+            "verdict": {
+                "agent": "peer_pydantic_ai",
+                "risk_score": 0.42,
+                "findings": ["amount within policy"],
+                "recommendation": "approve",
+                "timestamp_ms": 1_700_000_000_000_i64,
+            }
+        });
+        let resp = handle_peer_verdict_attach(json!(1), params).await;
+        let v = response_json(resp).await;
+        assert_eq!(v["jsonrpc"], "2.0");
+        assert_eq!(v["result"]["attached"], true);
+        assert_eq!(v["result"]["agent"], "peer_pydantic_ai");
+        assert_eq!(v["result"]["count"], 1);
+        let stored = a2a_peer_verdicts().get(&packet_id).expect("verdict stored");
+        assert_eq!(stored.len(), 1);
+        assert!((stored[0].risk_score - 0.42).abs() < 1e-9);
+        assert_eq!(stored[0].recommendation, "approve");
+    }
+
+    #[tokio::test]
+    async fn peer_verdict_attach_rejects_unknown_packet() {
+        let params = json!({
+            "packet_id": Uuid::new_v4().to_string(),
+            "verdict": {"agent": "ghost", "risk_score": 0.5, "recommendation": "approve"}
+        });
+        let resp = handle_peer_verdict_attach(json!(1), params).await;
+        let v = response_json(resp).await;
+        assert_eq!(v["error"]["code"], -32004);
+    }
+
+    #[tokio::test]
+    async fn peer_verdict_attach_validates_required_fields() {
+        let packet_id = seed_task();
+        let params = json!({
+            "packet_id": packet_id.to_string(),
+            "verdict": {"agent": "x", "recommendation": "approve"}
+        });
+        let resp = handle_peer_verdict_attach(json!(1), params).await;
+        let v = response_json(resp).await;
+        assert_eq!(v["error"]["code"], -32602);
     }
 }

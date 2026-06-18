@@ -71,6 +71,25 @@ impl FrameworkMappings {
     }
 }
 
+/// Independent fraud-auditor verdict from a peer agent
+/// (PydanticAI, LangGraph, CrewAI) that joined the Band room
+/// and emitted a structured opinion. Stored alongside the
+/// orchestrator's own agent decisions so the Evidence Packet
+/// can attest to multi-framework agreement (Story C-12 / G27).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PeerVerdict {
+    /// Agent name (e.g. ``"peer_pydantic_ai"``).
+    pub agent: String,
+    /// Risk score 0.0 (safe) to 1.0 (definite fraud).
+    pub risk_score: f64,
+    /// Free-form findings.
+    pub findings: Vec<String>,
+    /// ``"approve"`` or ``"halt"``.
+    pub recommendation: String,
+    /// Unix epoch ms when the peer emitted the verdict.
+    pub timestamp_ms: i64,
+}
+
 /// The canonical Evidence Packet. One per invoice run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvidencePacket {
@@ -90,6 +109,11 @@ pub struct EvidencePacket {
     pub bbaaar_outcome: Outcome,
     /// Framework coverage. All 7 default to `true`.
     pub framework_mappings: FrameworkMappings,
+    /// Independent verdicts from peer agents (PydanticAI,
+    /// LangGraph, CrewAI). Empty when no peer responded
+    /// before the BAAAR gate sealed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub peer_verdicts: Vec<PeerVerdict>,
 }
 
 impl EvidencePacket {
@@ -111,7 +135,14 @@ impl EvidencePacket {
             generated_at_ms: chrono::Utc::now().timestamp_millis(),
             bbaaar_outcome: outcome,
             framework_mappings: FrameworkMappings::default(),
+            peer_verdicts: Vec::new(),
         }
+    }
+
+    /// Append a peer verdict. Used by the A2A bridge when a
+    /// ``peer_verdict`` envelope arrives from the Band room.
+    pub fn attach_peer_verdict(&mut self, verdict: PeerVerdict) {
+        self.peer_verdicts.push(verdict);
     }
 
     /// Serialize the packet to canonical JSON bytes. The current
@@ -260,5 +291,80 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let parsed: EvidencePacket = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, p);
+    }
+
+    fn fake_peer_verdict(agent: &str, risk: f64, rec: &str) -> PeerVerdict {
+        PeerVerdict {
+            agent: agent.to_string(),
+            risk_score: risk,
+            findings: vec![format!("{agent} saw something")],
+            recommendation: rec.to_string(),
+            timestamp_ms: 1_700_000_000_000,
+        }
+    }
+
+    #[test]
+    fn peer_verdict_attaches_and_round_trips() {
+        let mut p = EvidencePacket::new("stark", "inv-001", vec![dec("stark")], Outcome::Approve);
+        assert!(p.peer_verdicts.is_empty());
+        p.attach_peer_verdict(fake_peer_verdict("peer_pydantic_ai", 0.42, "approve"));
+        p.attach_peer_verdict(fake_peer_verdict("peer_langgraph", 0.88, "halt"));
+        assert_eq!(p.peer_verdicts.len(), 2);
+        assert_eq!(p.peer_verdicts[0].agent, "peer_pydantic_ai");
+        assert!((p.peer_verdicts[1].risk_score - 0.88).abs() < 1e-9);
+        let json = serde_json::to_string(&p).unwrap();
+        let parsed: EvidencePacket = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.peer_verdicts, p.peer_verdicts);
+    }
+
+    #[test]
+    fn peer_verdict_json_contains_expected_keys() {
+        // The JSON must carry the field under the documented name so
+        // downstream consumers (compliance dashboard, EU AI Act
+        // Art. 12 mapper) can find it without schema guessing.
+        let mut p = EvidencePacket::new("stark", "inv-007", vec![], Outcome::Approve);
+        p.attach_peer_verdict(fake_peer_verdict("peer_pydantic_ai", 0.73, "halt"));
+        let s = serde_json::to_string(&p).unwrap();
+        assert!(s.contains("\"peer_verdicts\""), "wire format missing peer_verdicts: {s}");
+        assert!(s.contains("\"peer_pydantic_ai\""));
+        assert!(s.contains("\"risk_score\":0.73"));
+        assert!(s.contains("\"recommendation\":\"halt\""));
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let arr = v["peer_verdicts"].as_array().expect("peer_verdicts array");
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["agent"], "peer_pydantic_ai");
+    }
+
+    #[test]
+    fn empty_peer_verdicts_skip_in_wire_format() {
+        let p = EvidencePacket::new("stark", "inv-empty", vec![], Outcome::Approve);
+        let s = serde_json::to_string(&p).unwrap();
+        assert!(!s.contains("peer_verdicts"), "empty peer_verdicts should be elided: {s}");
+    }
+
+    #[test]
+    fn legacy_packet_json_without_peer_verdicts_deserializes() {
+        // Back-compat: packets sealed before C-12 / FIX-4 must still
+        // load. The field has ``#[serde(default)]``; verify that.
+        let legacy = serde_json::json!({
+            "packet_id": "00000000-0000-0000-0000-000000000001",
+            "tenant_id": "stark",
+            "invoice_id": "inv-legacy",
+            "agent_decisions": [],
+            "evidence_packet_v": 1,
+            "generated_at_ms": 1_700_000_000_000_i64,
+            "bbaaar_outcome": "approve",
+            "framework_mappings": {
+                "dora_art_9": true,
+                "dora_art_10": true,
+                "dora_art_17": true,
+                "eu_ai_act_art_12": true,
+                "eu_ai_act_art_26": true,
+                "nist_ai_rmf": true,
+                "owasp_agentic": true,
+            },
+        });
+        let p: EvidencePacket = serde_json::from_value(legacy).unwrap();
+        assert!(p.peer_verdicts.is_empty());
     }
 }
