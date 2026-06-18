@@ -19,6 +19,13 @@
 #     excluded so the default pull is small.
 #   * `mcp`    — `docker compose --profile mcp up` adds the
 #     codesearch-mcp service (used by C-11).
+#   * `peers`  — `docker compose --profile peers up` adds the
+#     three cross-framework Python peers (C-12): PydanticAI
+#     invoice validator (:7001), LangGraph compliance reviewer
+#     (:7002), CrewAI bench runner (:7003). The peer image is
+#     built from `./agents/Dockerfile`. CrewAI runs in mock
+#     fallback mode (tiktoken wheel build blocked on Py3.14);
+#     see agents/bench_runner.py docstring.
 
 services:
   agentgateway:
@@ -86,6 +93,62 @@ services:
     command: ["npx", "-y", "@apohara/codesearch-mcp@latest"]
     ports:
       - "127.0.0.1:3000:3000"
+    networks:
+      - themis-net
+
+  # --- Story C-12 / G27: cross-framework Python peers (opt-in profile). ---
+
+  peer-invoice-validator:
+    build:
+      context: ./agents
+      dockerfile: Dockerfile
+    container_name: themis-peer-invoice-validator
+    profiles: ["peers"]
+    command: ["python", "invoice_validator.py"]
+    environment:
+      PEER_PORT: "7001"
+      BAND_ROOM: "themis-3-demo"
+      BAND_WS_URL: "ws://themis-orchestrator:8080/ws"
+      LOG_LEVEL: "INFO"
+    depends_on:
+      themis-orchestrator:
+        condition: service_healthy
+    networks:
+      - themis-net
+
+  peer-compliance-reviewer:
+    build:
+      context: ./agents
+      dockerfile: Dockerfile
+    container_name: themis-peer-compliance-reviewer
+    profiles: ["peers"]
+    command: ["python", "compliance_reviewer.py"]
+    environment:
+      PEER_PORT: "7002"
+      BAND_ROOM: "themis-3-demo"
+      BAND_WS_URL: "ws://themis-orchestrator:8080/ws"
+      LOG_LEVEL: "INFO"
+    depends_on:
+      themis-orchestrator:
+        condition: service_healthy
+    networks:
+      - themis-net
+
+  peer-bench-runner:
+    build:
+      context: ./agents
+      dockerfile: Dockerfile
+    container_name: themis-peer-bench-runner
+    profiles: ["peers"]
+    command: ["python", "bench_runner.py"]
+    environment:
+      PEER_PORT: "7003"
+      BAND_ROOM: "themis-3-demo"
+      BAND_WS_URL: "ws://themis-orchestrator:8080/ws"
+      LOG_LEVEL: "INFO"
+    depends_on:
+      themis-orchestrator:
+        condition: service_healthy
     networks:
       - themis-net
 

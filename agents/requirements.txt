@@ -1,0 +1,24 @@
+# THEMIS 3.0 - C-12 / G27 cross-framework peers.
+#
+# These are the three Python framework peers required by Story C-12.
+# Install with `pip install -r requirements.txt` or let the
+# Dockerfile in this directory do it.
+#
+# `band-sdk` is the PyPI name; the import name is `band`.
+# pydantic-ai and langgraph install cleanly on Python 3.14.
+# crewai 0.11.2 pins a tiktoken<0.6.0 whose source wheel fails to
+# build on Py3.14 - we install crewai `--no-deps` in the Dockerfile
+# and document the mock fallback. See bench_runner.py docstring.
+#
+# `MockPydanticAIAgent.py` is stdlib-only and intentionally has no
+# pip dependency - it is the 18-jun-2026 EOD fallback for the demo.
+
+pydantic-ai>=1.0
+langgraph>=1.0
+crewai>=0.11
+band-sdk>=1.0
+uvicorn>=0.30
+starlette>=0.40
+httpx>=0.27
+websockets>=12
+python-dotenv>=1.0

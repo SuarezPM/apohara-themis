@@ -5,6 +5,11 @@
 Cargo.lock.bak
 # Vercel build output (rebuilt by scripts/vercel-build.sh on every deploy)
 /public
+# Python bytecode (C-12 cross-framework peers)
+/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
 
 # ─── Local state & archives (not for public consumption) ───────────
 # Pre-THEMIS development archive — kept locally for reference, never published
