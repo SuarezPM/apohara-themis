@@ -48,7 +48,7 @@ flowchart LR
   Sign --> Rekor["Rekor v2\nreal Ed25519 sig per tenant"]
   Sign --> TSA["RFC 3161 TSA\nFull chain verified"]
   Sign --> Packet["Evidence Packet\nPDF + JSON + Rekor anchor"]
-  Packet --> Verify["`themis-verify`\n<30 s, offline"]
+  Packet --> Verify["themis-verify offline\n<30 s"]
 
   style Gate fill:#dc2626,color:#fff
   style Packet fill:#d4a017,color:#0a0e1a
