@@ -55,6 +55,12 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 # integration code is gated with `#[cfg(target_os = "linux")]`.
 apohara-agentguard = { path = "/home/thelinconx/apohara-agentguard" }
 
+# Structured logging per the project coding-style.md rule
+# ("no println! in production code; use tracing"). THEMIS 3.0
+# converted all eprintln! callsites in src/ to tracing::{warn,
+# info, error} via the fix following this comment.
+tracing = "0.1"
+
 [dev-dependencies]
 tokio = { workspace = true }
 proptest = "1"

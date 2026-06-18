@@ -46,7 +46,13 @@ fn assert_meets(result: &BenchResult) {
     assert!(
         result.recall >= target,
         "{}: recall {:.3} < target {:.3} (TP={}, FN={}, FP={}, TN={})",
-        meta.name, result.recall, target, result.tp, result.fn_, result.fp, result.tn
+        meta.name,
+        result.recall,
+        target,
+        result.tp,
+        result.fn_,
+        result.fp,
+        result.tn
     );
 }
 

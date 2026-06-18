@@ -49,10 +49,8 @@ fn build_state() -> AppState {
         async fn process(
             &self,
             ctx: themis_agents::traits::AgentContext,
-        ) -> Result<
-            themis_agents::decision::AgentDecision,
-            themis_agents::decision::AgentError,
-        > {
+        ) -> Result<themis_agents::decision::AgentDecision, themis_agents::decision::AgentError>
+        {
             Ok(themis_agents::decision::AgentDecision {
                 agent_id: self.0.to_string(),
                 tenant_id: ctx.tenant_id,
@@ -70,8 +68,14 @@ fn build_state() -> AppState {
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let mut agents: HashMap<String, Arc<dyn Agent>> = HashMap::new();
     for (n, dt) in [
-        ("extractor", themis_agents::decision::DecisionType::Extracted),
-        ("po_matcher", themis_agents::decision::DecisionType::PoMatched),
+        (
+            "extractor",
+            themis_agents::decision::DecisionType::Extracted,
+        ),
+        (
+            "po_matcher",
+            themis_agents::decision::DecisionType::PoMatched,
+        ),
         (
             "fraud_auditor",
             themis_agents::decision::DecisionType::FraudAssessed,
@@ -84,12 +88,18 @@ fn build_state() -> AppState {
             "provenance_signer",
             themis_agents::decision::DecisionType::ProvenanceSigned,
         ),
-        ("demo_narrator", themis_agents::decision::DecisionType::Narrated),
+        (
+            "demo_narrator",
+            themis_agents::decision::DecisionType::Narrated,
+        ),
         (
             "regression_tester",
             themis_agents::decision::DecisionType::RegressionResult,
         ),
-        ("audit_watchdog", themis_agents::decision::DecisionType::WatchdogAlert),
+        (
+            "audit_watchdog",
+            themis_agents::decision::DecisionType::WatchdogAlert,
+        ),
     ] {
         agents.insert(n.to_string(), Arc::new(StubAgent(n, dt)));
     }
@@ -117,8 +127,11 @@ fn req(method: &str, uri: &str, body: Option<&str>, bearer: Option<&str>) -> Req
     if let Some(token) = bearer {
         b = b.header("authorization", token);
     }
-    b.body(body.map(|s| Body::from(s.to_string())).unwrap_or(Body::empty()))
-        .expect("request builder")
+    b.body(
+        body.map(|s| Body::from(s.to_string()))
+            .unwrap_or(Body::empty()),
+    )
+    .expect("request builder")
 }
 
 async fn body_bytes(resp: axum::response::Response) -> Vec<u8> {
@@ -140,8 +153,7 @@ async fn get_agent_card_returns_valid_json() {
         .to_str()
         .unwrap();
     assert!(ct.starts_with("application/json"), "ct={ct}");
-    let v: serde_json::Value =
-        serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     assert_eq!(v["protocolVersion"], "1.0");
     assert_eq!(v["name"], "THEMIS Orchestrator");
     assert!(v["skills"].as_array().unwrap().len() >= 3);
@@ -154,10 +166,12 @@ async fn get_agent_card_returns_valid_json() {
 #[tokio::test]
 async fn get_agents_json_lists_six_agents() {
     let app = build_router(build_state());
-    let resp = app.oneshot(req("GET", "/agents.json", None, None)).await.unwrap();
+    let resp = app
+        .oneshot(req("GET", "/agents.json", None, None))
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let v: serde_json::Value =
-        serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     let agents = v["agents"].as_array().expect("agents array");
     // The PRD contract: 6 agents in the fleet (the orchestrator
     // coordinator + 5 production agents + the new 3.0.0
@@ -198,8 +212,7 @@ async fn post_a2a_malformed_envelope_returns_400() {
         StatusCode::BAD_REQUEST,
         "malformed JSON-RPC must be 400, not 500"
     );
-    let v: serde_json::Value =
-        serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     assert_eq!(v["jsonrpc"], "2.0");
     // ERR_INVALID_REQUEST = -32600
     assert_eq!(v["error"]["code"], -32600);
@@ -212,16 +225,13 @@ async fn post_a2a_unknown_method_returns_404() {
         .oneshot(req(
             "POST",
             "/a2a",
-            Some(
-                r#"{"jsonrpc":"2.0","id":1,"method":"frobnicate","params":{}}"#,
-            ),
+            Some(r#"{"jsonrpc":"2.0","id":1,"method":"frobnicate","params":{}}"#),
             Some(MOCK_BEARER),
         ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-    let v: serde_json::Value =
-        serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     assert_eq!(v["error"]["code"], -32601);
 }
 
@@ -257,8 +267,7 @@ async fn post_a2a_message_send_dispatches() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let v: serde_json::Value =
-        serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     assert_eq!(v["jsonrpc"], "2.0");
     assert_eq!(v["id"], "req-1");
     let task = &v["result"]["task"];
@@ -286,8 +295,7 @@ async fn post_a2a_extended_card_returns_card_with_extended_flag() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let v: serde_json::Value =
-        serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     let card = &v["result"]["card"];
     assert_eq!(card["protocolVersion"], "1.0");
     assert_eq!(card["extended"], true);
@@ -297,12 +305,16 @@ async fn post_a2a_extended_card_returns_card_with_extended_flag() {
 async fn post_a2a_invalid_json_returns_400_with_parse_error() {
     let app = build_router(build_state());
     let resp = app
-        .oneshot(req("POST", "/a2a", Some("not json at all"), Some(MOCK_BEARER)))
+        .oneshot(req(
+            "POST",
+            "/a2a",
+            Some("not json at all"),
+            Some(MOCK_BEARER),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    let v: serde_json::Value =
-        serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     // ERR_PARSE = -32700
     assert_eq!(v["error"]["code"], -32700);
 }

@@ -157,7 +157,11 @@ pub fn parse_csv(dataset: Dataset) -> Result<Vec<BenchRow>, BenchError> {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        out.push(BenchRow { id, features, label });
+        out.push(BenchRow {
+            id,
+            features,
+            label,
+        });
     }
     Ok(out)
 }
@@ -202,7 +206,8 @@ pub fn predict(row: &BenchRow, dataset: Dataset) -> bool {
         Dataset::AdultIncome => {
             // features: [age, education_num, hours_per_week, capital_gain]
             let age: i32 = row
-                .features.first()
+                .features
+                .first()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
             let education_num: i32 = row

@@ -8,12 +8,12 @@
 //! `mcp://` URI scheme (per critic amendment) and the 5xx →
 //! `McpProxyError::Upstream` mapping.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use themis_orchestrator::mcp_proxy::{
-    McpProxyConfig, McpProxyError, forward_request, mcp_uri_to_http,
+    forward_request, mcp_uri_to_http, McpProxyConfig, McpProxyError,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -28,10 +28,7 @@ impl MockMcpServer {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind mock MCP listener");
-        let addr = listener
-            .local_addr()
-            .expect("local_addr")
-            .to_string();
+        let addr = listener.local_addr().expect("local_addr").to_string();
         let count = Arc::new(AtomicUsize::new(0));
         let count_inner = count.clone();
         tokio::spawn(async move {
@@ -52,8 +49,7 @@ impl MockMcpServer {
                 // can respond appropriately. Anything we don't
                 // recognize gets a tools/list response.
                 let response_body = respond_to(&raw);
-                let body_bytes = serde_json::to_vec(&response_body)
-                    .expect("serialize response");
+                let body_bytes = serde_json::to_vec(&response_body).expect("serialize response");
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body_bytes.len()
@@ -63,7 +59,10 @@ impl MockMcpServer {
                 let _ = stream.shutdown().await;
             }
         });
-        Self { addr, request_count: count }
+        Self {
+            addr,
+            request_count: count,
+        }
     }
 
     fn config(&self) -> McpProxyConfig {
@@ -78,16 +77,10 @@ impl MockMcpServer {
 fn respond_to(raw_http_request: &str) -> Value {
     // Pull the request body out of the HTTP envelope — the
     // mock only needs to know the JSON-RPC method.
-    let body = raw_http_request
-        .split("\r\n\r\n")
-        .nth(1)
-        .unwrap_or("{}");
+    let body = raw_http_request.split("\r\n\r\n").nth(1).unwrap_or("{}");
     let parsed: Value = serde_json::from_str(body).unwrap_or_else(|_| json!({}));
     let request_id = parsed.get("id").cloned().unwrap_or(Value::Null);
-    let method = parsed
-        .get("method")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let method = parsed.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
     match method {
         "initialize" => json!({
@@ -148,7 +141,10 @@ async fn proxy_forwards_initialize() {
         .expect("initialize must succeed");
     assert_eq!(response.status, 200);
     assert_eq!(response.body["jsonrpc"], "2.0");
-    assert_eq!(response.body["result"]["serverInfo"]["name"], "mock-codesearch");
+    assert_eq!(
+        response.body["result"]["serverInfo"]["name"],
+        "mock-codesearch"
+    );
     assert!(server.request_count.load(Ordering::SeqCst) >= 1);
 }
 

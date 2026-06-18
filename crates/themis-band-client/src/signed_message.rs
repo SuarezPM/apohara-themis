@@ -109,11 +109,7 @@ pub enum SignedMessageError {
 
 /// Sign a body. Produces a `SignedMessage` whose signature covers
 /// `canonicalize(body) || timestamp_ms_be`.
-pub fn sign(
-    body: serde_json::Value,
-    signing_key: &SigningKey,
-    timestamp_ms: i64,
-) -> SignedMessage {
+pub fn sign(body: serde_json::Value, signing_key: &SigningKey, timestamp_ms: i64) -> SignedMessage {
     let pk = signing_key.verifying_key();
     let did = Did::from_verifying_key(&pk);
     let message_bytes = signed_payload(&body, timestamp_ms);
@@ -137,7 +133,8 @@ pub fn verify(msg: &SignedMessage, now_ms: i64) -> Result<(), SignedMessageError
     }
     let pk = did_to_verifying_key(&msg.did)?;
     let message_bytes = signed_payload(&msg.body, msg.timestamp_ms);
-    let sig_bytes = hex::decode(&msg.signature_hex).map_err(|e| SignedMessageError::Hex(e.to_string()))?;
+    let sig_bytes =
+        hex::decode(&msg.signature_hex).map_err(|e| SignedMessageError::Hex(e.to_string()))?;
     if sig_bytes.len() != 64 {
         return Err(SignedMessageError::InvalidSignature);
     }
@@ -164,7 +161,10 @@ fn did_to_verifying_key(did: &Did) -> Result<VerifyingKey, SignedMessageError> {
     if did.method != "did:key" {
         return Err(SignedMessageError::InvalidDid);
     }
-    let id = did.id.strip_prefix("z6Mk").ok_or(SignedMessageError::InvalidDid)?;
+    let id = did
+        .id
+        .strip_prefix("z6Mk")
+        .ok_or(SignedMessageError::InvalidDid)?;
     let raw = bs58_decode(id).ok_or(SignedMessageError::InvalidDid)?;
     if raw.len() != 2 + 32 || raw[..2] != ED25519_PUB_MULTICODEC {
         return Err(SignedMessageError::InvalidDid);
@@ -287,4 +287,3 @@ mod tests {
     #[allow(dead_code)]
     fn _types_anchor() {}
 }
-

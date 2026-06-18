@@ -70,10 +70,7 @@ fn test_master_seed_domain_separates() {
     // The domain tag is exposed and stable. If a refactor changes
     // the tag, every previously-derived key changes too — assert
     // the exact bytes so the change is loud.
-    assert_eq!(
-        BIP32_LIKE_DOMAIN,
-        b"themis-3.0-tenant-keyring-v1"
-    );
+    assert_eq!(BIP32_LIKE_DOMAIN, b"themis-3.0-tenant-keyring-v1");
 }
 
 #[test]
@@ -113,5 +110,8 @@ fn test_evict_forces_rederivation() {
     // signs and the signature verifies under the same pubkey.
     use ed25519_dalek::Signer;
     let sig = after.sign(b"post-evict");
-    after.verifying_key().verify(b"post-evict", &sig).expect("verify");
+    after
+        .verifying_key()
+        .verify(b"post-evict", &sig)
+        .expect("verify");
 }

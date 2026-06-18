@@ -36,13 +36,19 @@ fn test_honesty_auditor_full_flow() {
     let po_matcher_output = "\
         PO-12345 found in registry; the vendor is always \
         responsive on the SEPA channel.";
-    assert!(matches!(a.audit(po_matcher_output), HonestyVerdict::Flag { .. }));
+    assert!(matches!(
+        a.audit(po_matcher_output),
+        HonestyVerdict::Flag { .. }
+    ));
 
     // Fraud Auditor: 2 over-claims ("never", "100%") → Flag.
     let fraud_auditor_output = "\
         The invoice is 100% within historical price bands and the \
         vendor has never failed a compliance check. Risk: 0.4.";
-    assert!(matches!(a.audit(fraud_auditor_output), HonestyVerdict::Flag { .. }));
+    assert!(matches!(
+        a.audit(fraud_auditor_output),
+        HonestyVerdict::Flag { .. }
+    ));
 
     // GAAP Classifier: 3 over-claims ("always", "definitely", "guaranteed")
     // → Fail.
@@ -58,7 +64,10 @@ fn test_honesty_auditor_full_flow() {
         The evidence chain is never compromised, always valid, \
         perfectly reconstructable, and there is no chance of \
         tampering. BLAKE3 hash pinned.";
-    assert!(matches!(a.audit(provenance_output), HonestyVerdict::Fail { .. }));
+    assert!(matches!(
+        a.audit(provenance_output),
+        HonestyVerdict::Fail { .. }
+    ));
 }
 
 #[test]
@@ -116,7 +125,10 @@ fn test_honesty_auditor_flagged_invoice_analysis() {
 
     match a.audit(analysis) {
         HonestyVerdict::Flag { reason } => {
-            assert!(reason.contains("always"), "reason missing 'always': {reason}");
+            assert!(
+                reason.contains("always"),
+                "reason missing 'always': {reason}"
+            );
         }
         other => panic!("expected Flag, got {other:?}"),
     }
@@ -139,11 +151,20 @@ fn test_honesty_auditor_failed_invoice_analysis() {
             // where each `p` is the literal regex from `DEFAULT_OVER_CLAIM_PATTERNS`.
             // We assert on the *anchoring token* of each pattern, not the full
             // pattern body (which contains regex metachars like `\b`, `(?:`).
-            assert!(reason.contains("always"), "reason missing 'always': {reason}");
+            assert!(
+                reason.contains("always"),
+                "reason missing 'always': {reason}"
+            );
             assert!(reason.contains("never"), "reason missing 'never': {reason}");
             assert!(reason.contains("100"), "reason missing '100%': {reason}");
-            assert!(reason.contains("definitely"), "reason missing 'definitely': {reason}");
-            assert!(reason.contains("guarantee"), "reason missing 'guarantee': {reason}");
+            assert!(
+                reason.contains("definitely"),
+                "reason missing 'definitely': {reason}"
+            );
+            assert!(
+                reason.contains("guarantee"),
+                "reason missing 'guarantee': {reason}"
+            );
         }
         other => panic!("expected Fail, got {other:?}"),
     }
@@ -202,12 +223,16 @@ fn test_honesty_auditor_visible_in_band_room() {
     // Sanity check: the default pattern set is non-empty and
     // contains the over-claim categories the PRD names.
     assert!(!DEFAULT_OVER_CLAIM_PATTERNS.is_empty());
-    assert!(DEFAULT_OVER_CLAIM_PATTERNS.iter().any(|p| p.contains("100")));
-    assert!(DEFAULT_OVER_CLAIM_PATTERNS.iter().any(|p| p.contains("always")));
-    assert!(DEFAULT_OVER_CLAIM_PATTERNS.iter().any(|p| p.contains("never")));
-    assert!(
-        DEFAULT_OVER_CLAIM_PATTERNS
-            .iter()
-            .any(|p| p.contains("guarantee"))
-    );
+    assert!(DEFAULT_OVER_CLAIM_PATTERNS
+        .iter()
+        .any(|p| p.contains("100")));
+    assert!(DEFAULT_OVER_CLAIM_PATTERNS
+        .iter()
+        .any(|p| p.contains("always")));
+    assert!(DEFAULT_OVER_CLAIM_PATTERNS
+        .iter()
+        .any(|p| p.contains("never")));
+    assert!(DEFAULT_OVER_CLAIM_PATTERNS
+        .iter()
+        .any(|p| p.contains("guarantee")));
 }

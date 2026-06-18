@@ -18,9 +18,9 @@ use thiserror::Error;
 
 use crate::packet::{EvidencePacket, SignedPacket};
 use crate::room::BandRoom;
-use uuid::Uuid;
 use crate::state::{InvoiceState, StateMachine, Transition};
 use crate::tenants::{TenantError, TenantRegistry};
+use uuid::Uuid;
 
 /// Orchestrator-level errors.
 #[derive(Debug, Error)]
@@ -48,6 +48,17 @@ pub enum OrchestratorError {
     /// Evidence-service / SealedPacket construction error.
     #[error("evidence: {0}")]
     Evidence(String),
+    /// SignerService failed to construct a per-tenant signer.
+    /// Carries the tenant id and the underlying error message.
+    #[error("signer init for tenant {tenant_id} failed: {cause}")]
+    SignerInit {
+        /// The tenant whose signer could not be built.
+        tenant_id: String,
+        /// The underlying error from the signer factory
+        /// (renamed from `source` because thiserror reserves
+        /// `source` for the `#[source]` attribute field).
+        cause: String,
+    },
 }
 
 /// The orchestrator. Holds a per-invoice state machine map (so
@@ -290,7 +301,7 @@ impl Orchestrator {
                 None => {
                     sm.transition(Transition::Fail(format!("missing agent: {agent_name}")))?;
                     let packet = self.assemble(tenant_id, invoice_id, &decisions, bbaaar_outcome);
-                    let signed = self.sign(packet, tenant_id);
+                    let signed = self.sign(packet, tenant_id)?;
                     return Ok(signed);
                 }
             };
@@ -314,7 +325,7 @@ impl Orchestrator {
                     sm.transition(Transition::Fail(format!("agent {agent_name}: {e}")))?;
                     bbaaar_outcome = Outcome::Approve; // fail-closed does not imply BAAAR halt
                     let packet = self.assemble(tenant_id, invoice_id, &decisions, bbaaar_outcome);
-                    let signed = self.sign(packet, tenant_id);
+                    let signed = self.sign(packet, tenant_id)?;
                     return Ok(signed);
                 }
             };
@@ -333,18 +344,13 @@ impl Orchestrator {
                     "po_matcher" => themis_agents::baaar::AgentRole::PoMatcher,
                     "fraud_auditor" => themis_agents::baaar::AgentRole::FraudAuditor,
                     "gaap_classifier" => themis_agents::baaar::AgentRole::GaapClassifier,
-                    "provenance_signer" => {
-                        themis_agents::baaar::AgentRole::ProvenanceSigner
-                    }
+                    "provenance_signer" => themis_agents::baaar::AgentRole::ProvenanceSigner,
                     "demo_narrator" => themis_agents::baaar::AgentRole::DemoNarrator,
-                    "regression_tester" => {
-                        themis_agents::baaar::AgentRole::RegressionTester
-                    }
+                    "regression_tester" => themis_agents::baaar::AgentRole::RegressionTester,
                     "audit_watchdog" => themis_agents::baaar::AgentRole::AuditWatchdog,
                     _ => themis_agents::baaar::AgentRole::DemoNarrator,
                 };
-                let model_id =
-                    crate::llm_backend::model_id_for_agent(role).to_string();
+                let model_id = crate::llm_backend::model_id_for_agent(role).to_string();
                 bus.publish(crate::events::Event::ProviderActive {
                     run_id: Uuid::new_v4(),
                     model_id,
@@ -365,11 +371,7 @@ impl Orchestrator {
                     .next()
                     .unwrap_or_default();
                 if !next_name.is_empty() {
-                    let context_summary = decision
-                        .reasoning
-                        .chars()
-                        .take(200)
-                        .collect::<String>();
+                    let context_summary = decision.reasoning.chars().take(200).collect::<String>();
                     bus.publish(crate::events::Event::AgentHandoff {
                         run_id: Uuid::new_v4(),
                         from: agent_name.to_string(),
@@ -459,7 +461,7 @@ impl Orchestrator {
         }
 
         let packet = self.assemble(tenant_id, invoice_id, &decisions, bbaaar_outcome);
-        let signed = self.sign(packet, tenant_id);
+        let signed = self.sign(packet, tenant_id)?;
         // Anchor the BLAKE3 hash in Rekor (if a client is configured).
         // Closes the demo data → evidence → Rekor chain end-to-end.
         let signed = self.anchor_in_rekor(signed, tenant_id).await;
@@ -488,7 +490,11 @@ impl Orchestrator {
     /// public key is the tenant's real pubkey (from
     /// `TenantRegistry`, derived at startup from the same SignerService).
     /// `themis-verify` can validate the produced packet offline.
-    fn sign(&self, packet: EvidencePacket, tenant_id: &str) -> SignedPacket {
+    fn sign(
+        &self,
+        packet: EvidencePacket,
+        tenant_id: &str,
+    ) -> Result<SignedPacket, OrchestratorError> {
         let tenant = self.tenants.get(tenant_id);
         let public_key_hex = tenant
             .map(|t| t.ed25519_public_key_hex.clone())
@@ -497,16 +503,21 @@ impl Orchestrator {
         // SignerService is the same one TenantRegistry used to
         // derive `public_key_hex` at startup, so the sig verifies
         // against the embedded pubkey.
-        let signer = themis_evidence::signer::SignerService::for_tenant(tenant_id)
-            .unwrap_or_else(|e| {
-                eprintln!("SignerService::for_tenant({tenant_id}) failed at sign time: {e}");
-                panic!("SignerService::for_tenant({tenant_id}) failed at sign time: {e}")
-            });
+        let signer = match themis_evidence::signer::SignerService::for_tenant(tenant_id) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(tenant_id, error = %e, "SignerService::for_tenant failed at sign time");
+                return Err(OrchestratorError::SignerInit {
+                    tenant_id: tenant_id.to_string(),
+                    cause: e.to_string(),
+                });
+            }
+        };
         let canonical_payload = packet
             .to_canonical_json()
             .expect("EvidencePacket::to_canonical_json is infallible for our types");
         let signature_hex = signer.sign_hex(&canonical_payload);
-        SignedPacket::wrap(packet, signature_hex, public_key_hex)
+        Ok(SignedPacket::wrap(packet, signature_hex, public_key_hex))
     }
 
     /// Anchor a `SignedPacket`'s BLAKE3 hash in Rekor and return
@@ -529,7 +540,7 @@ impl Orchestrator {
                 // Don't fail the whole run if Rekor is unavailable
                 // (e.g. cosign missing on the demo machine); just
                 // log and skip the anchor.
-                eprintln!("[warn] Rekor anchor failed for {tenant_id}: {e}");
+                tracing::warn!("[warn] Rekor anchor failed for {tenant_id}: {e}");
                 signed
             }
         }

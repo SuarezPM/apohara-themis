@@ -126,15 +126,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `Arc<dyn BandRoom>` (trait object) so the test path can
     // substitute a `MockBandRoom` without touching this code.
     let room_concrete = std::sync::Arc::new(themis_orchestrator::room::ScriptedBandRoom::new());
-    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> = if let Some(real) =
-        themis_orchestrator::room::try_real_band_room()
-    {
-        eprintln!("[band] using RealBandRoom (subprocess bridge)");
-        real
-    } else {
-        eprintln!("[band] using ScriptedBandRoom (in-memory fallback)");
-        room_concrete.clone()
-    };
+    let rooms: Arc<dyn themis_orchestrator::room::BandRoom> =
+        if let Some(real) = themis_orchestrator::room::try_real_band_room() {
+            eprintln!("[band] using RealBandRoom (subprocess bridge)");
+            real
+        } else {
+            eprintln!("[band] using ScriptedBandRoom (in-memory fallback)");
+            room_concrete.clone()
+        };
     let orch = Orchestrator::with_evidence(
         rooms,
         agents,

@@ -53,7 +53,7 @@ use base64::Engine;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use themis_frontend::{AGENT_CARD_JSON, AGENTS_JSON};
+use themis_frontend::{AGENTS_JSON, AGENT_CARD_JSON};
 use uuid::Uuid;
 
 use crate::events::Event;
@@ -182,9 +182,7 @@ pub async fn post_a2a(
     match method.as_str() {
         "message/send" => handle_message_send(&state, id, req.params).await,
         "tasks/get" => handle_tasks_get(&state, id, req.params).await,
-        "agent/authenticatedExtendedCard" => {
-            handle_extended_card(id).await
-        }
+        "agent/authenticatedExtendedCard" => handle_extended_card(id).await,
         other => jsonrpc_error(
             StatusCode::NOT_FOUND,
             id,
@@ -218,11 +216,7 @@ pub async fn get_agents_json() -> Response {
 /// C-01 surface; richer param shapes (A2A `parts`, `messages`)
 /// land in C-09+ when the orchestrator adopts the A2A
 /// "message" data model end-to-end.
-async fn handle_message_send(
-    state: &Arc<AppState>,
-    id: Value,
-    params: Value,
-) -> Response {
+async fn handle_message_send(state: &Arc<AppState>, id: Value, params: Value) -> Response {
     let p = match params.as_object() {
         Some(o) => o,
         None => {
@@ -289,10 +283,7 @@ async fn handle_message_send(
     // on the evidence service being wired.
     let packet = {
         let orch = state.orchestrator.lock().await;
-        match orch
-            .process_invoice(&tenant_id, &invoice_id, raw)
-            .await
-        {
+        match orch.process_invoice(&tenant_id, &invoice_id, raw).await {
             Ok(p) => p,
             Err(e) => {
                 return jsonrpc_error(
@@ -356,11 +347,7 @@ async fn handle_message_send(
 /// C-01: looks up an in-memory map populated by `message/send`.
 /// C-09+ replaces this with a durable task store (Postgres or
 /// a `themis-tasks` crate).
-async fn handle_tasks_get(
-    _state: &Arc<AppState>,
-    id: Value,
-    params: Value,
-) -> Response {
+async fn handle_tasks_get(_state: &Arc<AppState>, id: Value, params: Value) -> Response {
     let p = match params.as_object() {
         Some(o) => o,
         None => {
@@ -438,8 +425,7 @@ async fn handle_tasks_get(
 /// (a convention from Google's A2A reference impl) get a
 /// 200 with the same payload.
 async fn handle_extended_card(id: Value) -> Response {
-    let mut card: Value =
-        serde_json::from_str(AGENT_CARD_JSON).unwrap_or_else(|_| json!({}));
+    let mut card: Value = serde_json::from_str(AGENT_CARD_JSON).unwrap_or_else(|_| json!({}));
     if let Some(obj) = card.as_object_mut() {
         obj.insert("extended".to_string(), json!(true));
     }
@@ -475,10 +461,9 @@ fn mock_ed25519_bearer_check(headers: &axum::http::HeaderMap) -> Option<&'static
     if !sig.chars().all(|c| c.is_ascii_hexdigit()) {
         return Some("signature contains non-hex chars");
     }
-    eprintln!(
-        "[a2a] WARNING: mock Ed25519 bearer accepted (C-01 stub); \
-         real verification lands in C-02 (AgentGuard). sig={}",
-        &sig[..sig.len().min(16)]
+    tracing::warn!(
+        sig_prefix = &sig[..sig.len().min(16)],
+        "mock Ed25519 bearer accepted (C-01 stub); real verification lands in C-02 (AgentGuard)"
     );
     None
 }
@@ -502,7 +487,11 @@ fn jsonrpc_error(
     let body = JsonRpcError {
         jsonrpc: JSONRPC_VERSION,
         id,
-        error: JsonRpcErrorBody { code, message, data },
+        error: JsonRpcErrorBody {
+            code,
+            message,
+            data,
+        },
     };
     (status, Json(body)).into_response()
 }
@@ -524,8 +513,7 @@ fn json_response(status: StatusCode, body: &str) -> Response {
 /// `AppState` — would couple the A2A surface to the live
 /// demo state, which is the wrong blast radius. C-09 replaces
 /// this with a durable store.
-static A2A_TASKS: std::sync::OnceLock<DashMap<Uuid, A2ATaskRecord>> =
-    std::sync::OnceLock::new();
+static A2A_TASKS: std::sync::OnceLock<DashMap<Uuid, A2ATaskRecord>> = std::sync::OnceLock::new();
 
 fn a2a_tasks() -> &'static DashMap<Uuid, A2ATaskRecord> {
     A2A_TASKS.get_or_init(DashMap::new)
@@ -589,10 +577,7 @@ mod tests {
     #[test]
     fn mock_bearer_check_rejects_wrong_scheme() {
         let mut h = axum::http::HeaderMap::new();
-        h.insert(
-            header::AUTHORIZATION,
-            "Bearer abc".parse().unwrap(),
-        );
+        h.insert(header::AUTHORIZATION, "Bearer abc".parse().unwrap());
         assert!(mock_ed25519_bearer_check(&h).is_some());
     }
 

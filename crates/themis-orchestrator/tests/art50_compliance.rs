@@ -30,7 +30,7 @@ use themis_orchestrator::room::MockBandRoom;
 use themis_orchestrator::tenants::TenantRegistry;
 use themis_orchestrator::test_support::{build_stub_agents_with_mock, DemoInvoice};
 
-use themis_agents::llm::{LlmResponse, MockLlmProvider, FinishReason};
+use themis_agents::llm::{FinishReason, LlmResponse, MockLlmProvider};
 use themis_evidence::rekor::MockRekorClient;
 
 fn router_for(f: &DemoInvoice) -> axum::Router {
@@ -197,7 +197,9 @@ async fn test_root_still_serves_after_c08() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
-    let body = axum::body::to_bytes(resp.into_body(), 256 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 256 * 1024)
+        .await
+        .unwrap();
     let html = std::str::from_utf8(&body).unwrap();
     assert!(html.contains("THEMIS"));
 }

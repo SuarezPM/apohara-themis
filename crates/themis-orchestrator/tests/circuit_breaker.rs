@@ -84,7 +84,10 @@ fn test_breaker_recovers_on_success() {
 
     // Trial call succeeds → Closed.
     let r: Result<&'static str, CircuitBreakerError<&'static str>> = cb.call(|| Ok("trial-ok"));
-    assert!(matches!(r, Ok("trial-ok")), "expected Ok(trial-ok), got {r:?}");
+    assert!(
+        matches!(r, Ok("trial-ok")),
+        "expected Ok(trial-ok), got {r:?}"
+    );
     assert!(matches!(cb.state(), CircuitState::Closed));
     assert_eq!(cb.failures.load(Ordering::SeqCst), 0);
 

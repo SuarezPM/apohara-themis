@@ -51,7 +51,9 @@ async fn sealed_packet_carries_iso_42001_fields_by_default() {
         "monitoring_mechanism must mention BAAAR-gate, got: {monitoring}"
     );
     assert!(
-        iso.get("improvement_cycle").and_then(|v| v.as_str()).is_some(),
+        iso.get("improvement_cycle")
+            .and_then(|v| v.as_str())
+            .is_some(),
         "improvement_cycle must be present"
     );
     assert_eq!(

@@ -30,10 +30,8 @@ use apohara_agentguard::config::Config as AgentGuardConfig;
 use apohara_agentguard::firewall;
 use apohara_agentguard::hook::contract::HookInput;
 use apohara_agentguard::policy::engine::PolicySet;
-use apohara_agentguard::sandbox::{
-    PermissionTier, SandboxRequest, SandboxResult, SandboxRunner,
-};
-use apohara_agentguard::verdict::{Tier, Thresholds};
+use apohara_agentguard::sandbox::{PermissionTier, SandboxRequest, SandboxResult, SandboxRunner};
+use apohara_agentguard::verdict::{Thresholds, Tier};
 
 use themis_orchestrator::sandbox::redact;
 
@@ -114,10 +112,7 @@ fn test_redact_secrets_works() {
     // redact_secrets (the Authorization: branch).
     let curl = r#"curl -H "Authorization: Bearer sk-xyz789" https://example.com"#;
     let out2 = redact(curl);
-    assert!(
-        !out2.contains("sk-xyz789"),
-        "Bearer token leaked: {out2}"
-    );
+    assert!(!out2.contains("sk-xyz789"), "Bearer token leaked: {out2}");
 }
 
 #[test]

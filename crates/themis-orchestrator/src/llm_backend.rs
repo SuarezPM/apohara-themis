@@ -183,33 +183,25 @@ pub fn select_backend_with(aimlapi_base_url: Option<String>) -> &'static str {
     // Explicit overrides.
     match provider {
         "mock" => {
-            eprintln!("[themis-orchestrator] LLM: MockLlmProvider (THEMIS_LLM_PROVIDER=mock)");
+            tracing::info!("[themis-orchestrator] LLM: MockLlmProvider (THEMIS_LLM_PROVIDER=mock)");
             return "mock-demo";
         }
         "aimlapi" => {
             let model = resolve_model("aimlapi");
             if AIMLAPIBackend::from_env_with_url(model, aiml_url.clone()).is_some() {
-                eprintln!(
-                    "[themis-orchestrator] LLM: AIMLAPIBackend({model}) — live (THEMIS_LLM_PROVIDER=aimlapi)"
-                );
+                tracing::info!("[themis-orchestrator] LLM: AIMLAPIBackend({model}) — live (THEMIS_LLM_PROVIDER=aimlapi)");
                 return model;
             }
-            eprintln!(
-                "[themis-orchestrator] LLM: AIML API requested but AIML_API_KEY not set; falling back to mock"
-            );
+            tracing::info!("[themis-orchestrator] LLM: AIML API requested but AIML_API_KEY not set; falling back to mock");
             return "mock-demo";
         }
         "featherless" => {
             let model = resolve_model("featherless");
             if FeatherlessBackend::from_env(model).is_some() {
-                eprintln!(
-                    "[themis-orchestrator] LLM: FeatherlessBackend({model}) — live (THEMIS_LLM_PROVIDER=featherless)"
-                );
+                tracing::info!("[themis-orchestrator] LLM: FeatherlessBackend({model}) — live (THEMIS_LLM_PROVIDER=featherless)");
                 return model;
             }
-            eprintln!(
-                "[themis-orchestrator] LLM: Featherless requested but FEATHERLESS_API_KEY not set; falling back to mock"
-            );
+            tracing::info!("[themis-orchestrator] LLM: Featherless requested but FEATHERLESS_API_KEY not set; falling back to mock");
             return "mock-demo";
         }
         _ => {}
@@ -218,19 +210,17 @@ pub fn select_backend_with(aimlapi_base_url: Option<String>) -> &'static str {
     // Auto: try AIML API first, then Featherless, then mock.
     let aiml_model = resolve_model("aimlapi");
     if AIMLAPIBackend::from_env_with_url(aiml_model, aiml_url).is_some() {
-        eprintln!("[themis-orchestrator] LLM: AIMLAPIBackend({aiml_model}) — live (auto-selected)");
+        tracing::info!(
+            "[themis-orchestrator] LLM: AIMLAPIBackend({aiml_model}) — live (auto-selected)"
+        );
         return aiml_model;
     }
     let featherless_model = resolve_model("featherless");
     if FeatherlessBackend::from_env(featherless_model).is_some() {
-        eprintln!(
-            "[themis-orchestrator] LLM: FeatherlessBackend({featherless_model}) — live (auto-selected, AIML API not set)"
-        );
+        tracing::info!("[themis-orchestrator] LLM: FeatherlessBackend({featherless_model}) — live (auto-selected, AIML API not set)");
         return featherless_model;
     }
-    eprintln!(
-        "[themis-orchestrator] LLM: MockLlmProvider — neither AIML_API_KEY nor FEATHERLESS_API_KEY is set"
-    );
+    tracing::info!("[themis-orchestrator] LLM: MockLlmProvider — neither AIML_API_KEY nor FEATHERLESS_API_KEY is set");
     "mock-demo"
 }
 

@@ -35,7 +35,11 @@ async fn per_tenant_override_takes_precedence() {
         per_jurisdiction_overrides: HashMap::new(),
     };
     assert_eq!(p.effective_months("wayne", "EU"), 24);
-    assert_eq!(p.effective_months("stark", "EU"), 6, "other tenants use default");
+    assert_eq!(
+        p.effective_months("stark", "EU"),
+        6,
+        "other tenants use default"
+    );
 }
 
 #[tokio::test]
@@ -56,7 +60,10 @@ async fn seal_succeeds_within_retention_window() {
     let mut svc = EvidenceService::for_tenant("stark", tsa()).expect("baked stark");
     let p1 = svc.seal("inv-r-1", "{\"a\":1}", None).await.expect("first");
     // Same instant — second seal should still pass (window not exceeded).
-    let p2 = svc.seal("inv-r-2", "{\"a\":2}", None).await.expect("second");
+    let p2 = svc
+        .seal("inv-r-2", "{\"a\":2}", None)
+        .await
+        .expect("second");
     assert!(p1.chain_length < p2.chain_length);
 }
 
@@ -69,9 +76,12 @@ async fn seal_succeeds_for_wayne_with_24_month_retention() {
         per_tenant_overrides: per_tenant,
         per_jurisdiction_overrides: HashMap::new(),
     };
-    let mut svc = EvidenceService::for_tenant_with_retention("wayne", tsa(), policy)
-        .expect("baked wayne");
-    let _ = svc.seal("inv-r-w-1", "{\"w\":1}", None).await.expect("seal");
+    let mut svc =
+        EvidenceService::for_tenant_with_retention("wayne", tsa(), policy).expect("baked wayne");
+    let _ = svc
+        .seal("inv-r-w-1", "{\"w\":1}", None)
+        .await
+        .expect("seal");
     // 24 months later would still pass for wayne (US-06 test).
     // We can't fast-forward the clock on the live service, but the
     // policy resolution is verified above.
@@ -85,7 +95,9 @@ async fn chain_enforce_retention_rejects_aged_entry() {
     use themis_evidence::chain::{ChainError, HashChain};
     let mut chain = HashChain::new();
     // Append a fresh entry — passes retention (empty → OK).
-    chain.append_with_timestamp("first", 1_000_000).expect("append 1");
+    chain
+        .append_with_timestamp("first", 1_000_000)
+        .expect("append 1");
     // Same instant — 0ms age, well within any window.
     let policy = RetentionPolicy::default();
     chain
@@ -93,12 +105,7 @@ async fn chain_enforce_retention_rejects_aged_entry() {
         .expect("same instant must pass");
     // 7 months later — exceeds 6-month default.
     let seven_months_ms: i64 = 7 * 30 * 86_400 * 1000;
-    let res = chain.enforce_retention(
-        &policy,
-        1_000_000 + seven_months_ms,
-        "stark",
-        "EU",
-    );
+    let res = chain.enforce_retention(&policy, 1_000_000 + seven_months_ms, "stark", "EU");
     assert!(
         matches!(res, Err(ChainError::RetentionExceeded { window_months: 6 })),
         "expected RetentionExceeded {{ window_months: 6 }}, got {res:?}"

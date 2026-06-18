@@ -46,26 +46,26 @@ pub mod baaar_z3;
 /// 3-state breaker (`Closed` / `Open` / `HalfOpen`), threshold=5
 /// failures, 30s timeout, exponential backoff 100/200/400/800/1600ms.
 pub mod circuit_breaker;
-/// Dual-LLM split — privileged + quarantined contexts (Story C-07 /
-/// G14 / AC7, ASI01 3rd defense). Pattern from Microsoft Zero Trust
-/// SFI 2026. See `dual_llm.rs` for the full surface and the MVP
-/// scope (trait + mock; production wiring lands in a follow-up).
-pub mod dual_llm;
 /// INV-15 verification seam at the LLM call boundary
 /// (Story C-03 / G14 / G19 / AC3). Pairs with
 /// `themis-compliance::inv15` — this module is the wiring, not
 /// the verifier. See `context.rs` for the integration plan and
 /// the note about the `LlmBackend::send` follow-up.
 pub mod context;
+/// Dual-LLM split — privileged + quarantined contexts (Story C-07 /
+/// G14 / AC7, ASI01 3rd defense). Pattern from Microsoft Zero Trust
+/// SFI 2026. See `dual_llm.rs` for the full surface and the MVP
+/// scope (trait + mock; production wiring lands in a follow-up).
+pub mod dual_llm;
 pub mod events;
 pub mod featherless_openclaw;
 pub mod fixtures;
+pub mod http;
 /// Alert-fatigue detector — Story C-06 / G22 / AC6 (ASI09
 /// Human-Agent Trust Exploitation defense). Suspends HITL when
 /// the human approves more than 5 BAAAR HALT overrides in 60s;
 /// requires explicit re-auth before further approvals.
 pub mod human_guard;
-pub mod http;
 /// Tenant keyring — Story C-13 / G16, G28 / AC13.
 ///
 /// BIP32-*style* (HMAC-SHA512, first 32 bytes) Ed25519 keyring

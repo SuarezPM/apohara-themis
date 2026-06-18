@@ -102,15 +102,7 @@ mod tests {
         let ids: Vec<&str> = r.sops.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(
             ids,
-            vec![
-                "SOP-001",
-                "SOP-002",
-                "SOP-003",
-                "SOP-004",
-                "SOP-005",
-                "SOP-006",
-                "SOP-007",
-            ]
+            vec!["SOP-001", "SOP-002", "SOP-003", "SOP-004", "SOP-005", "SOP-006", "SOP-007",]
         );
     }
 
@@ -118,13 +110,19 @@ mod tests {
     fn to_json_serializes_all_sops() {
         let r = derive();
         let j = to_json(&r);
-        let sops = j.get("sops").and_then(|v| v.as_array()).expect("sops must be an array");
+        let sops = j
+            .get("sops")
+            .and_then(|v| v.as_array())
+            .expect("sops must be an array");
         assert_eq!(sops.len(), 7);
         assert_eq!(j.get("sop_count").and_then(|v| v.as_u64()), Some(7));
         for (i, s) in sops.iter().enumerate() {
             assert!(s.get("id").is_some(), "SOP {i} missing id");
             assert!(s.get("title").is_some(), "SOP {i} missing title");
-            assert!(s.get("last_reviewed").is_some(), "SOP {i} missing last_reviewed");
+            assert!(
+                s.get("last_reviewed").is_some(),
+                "SOP {i} missing last_reviewed"
+            );
         }
     }
 }

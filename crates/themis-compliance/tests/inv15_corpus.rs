@@ -129,9 +129,9 @@ const LEGIT: &[&str] = &[
 fn poisoned_must_block(v: &Inv15Verifier, input: &str) {
     match v.verify(input) {
         Verdict::Block(_) => {}
-        other => panic!(
-            "POISONED PROMPT FALSE NEGATIVE: '{input}' returned {other:?}, expected Block"
-        ),
+        other => {
+            panic!("POISONED PROMPT FALSE NEGATIVE: '{input}' returned {other:?}, expected Block")
+        }
     }
 }
 

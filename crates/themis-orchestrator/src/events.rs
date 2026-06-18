@@ -250,8 +250,7 @@ impl Default for SponsorStackInfo {
     fn default() -> Self {
         Self {
             band: "band-sdk[langgraph]==0.2.11".to_string(),
-            aiml_api:
-                "anthropic/claude-sonnet-4.5 + meta-llama/Llama-3.3-70B-Instruct".to_string(),
+            aiml_api: "anthropic/claude-sonnet-4.5 + meta-llama/Llama-3.3-70B-Instruct".to_string(),
             featherless: "Qwen/Qwen3-Coder-30B-A3B-Instruct".to_string(),
         }
     }

@@ -24,12 +24,10 @@
 
 use std::sync::Arc;
 
-use themis_agents::llm::{
-    FinishReason, LlmBackend, LlmResponse, MockLlmProvider,
-};
+use themis_agents::llm::{FinishReason, LlmBackend, LlmResponse, MockLlmProvider};
+use themis_orchestrator::orchestrator::Orchestrator;
 use themis_orchestrator::room::{BandRoom, MockBandRoom};
 use themis_orchestrator::tenants::TenantRegistry;
-use themis_orchestrator::orchestrator::Orchestrator;
 
 #[derive(Debug, Clone)]
 struct BenchRow {
@@ -119,21 +117,15 @@ async fn public_bench_meets_targets() {
     assert_eq!(rows.len(), 50, "expected 50 rows, got {}", rows.len());
     let fraud_count = rows.iter().filter(|r| r.fraud_label == 1).count();
     let clean_count = rows.iter().filter(|r| r.fraud_label == 0).count();
-    assert_eq!(
-        fraud_count, 25,
-        "expected 25 fraud rows, got {fraud_count}"
-    );
-    assert_eq!(
-        clean_count, 25,
-        "expected 25 clean rows, got {clean_count}"
-    );
+    assert_eq!(fraud_count, 25, "expected 25 fraud rows, got {fraud_count}");
+    assert_eq!(clean_count, 25, "expected 25 clean rows, got {clean_count}");
 
     // ---- Baseline: 50/50 always-flag classifier (worst case) ----
     // TP = 25 (every fraud is flagged), FN = 0
     // FP = 25 (every clean is flagged), TN = 0
     let baseline_fp = clean_count; // 25
     let baseline_tp = fraud_count; // 25
-    // We won't count baseline.fn (it's 0).
+                                   // We won't count baseline.fn (it's 0).
     let _ = baseline_tp;
 
     // ---- THEMIS path: heuristic rules + BAAAR hard threshold ----
@@ -161,11 +153,22 @@ async fn public_bench_meets_targets() {
             (false, false) => tn += 1,
         }
     }
-    let precision = if tp + fp > 0 { tp as f64 / (tp + fp) as f64 } else { 1.0 };
-    let recall = if tp + fn_ > 0 { tp as f64 / (tp + fn_) as f64 } else { 0.0 };
-    let fpr = if fp + tn > 0 { fp as f64 / (fp + tn) as f64 } else { 0.0 };
-    let fp_reduction_pct =
-        ((baseline_fp as f64 - fp as f64) / baseline_fp as f64) * 100.0;
+    let precision = if tp + fp > 0 {
+        tp as f64 / (tp + fp) as f64
+    } else {
+        1.0
+    };
+    let recall = if tp + fn_ > 0 {
+        tp as f64 / (tp + fn_) as f64
+    } else {
+        0.0
+    };
+    let fpr = if fp + tn > 0 {
+        fp as f64 / (fp + tn) as f64
+    } else {
+        0.0
+    };
+    let fp_reduction_pct = ((baseline_fp as f64 - fp as f64) / baseline_fp as f64) * 100.0;
 
     println!();
     println!("=== THEMIS public-bench (InvoiceNet sample 50) ===");
@@ -177,14 +180,8 @@ async fn public_bench_meets_targets() {
     println!("==================================================");
     println!();
 
-    assert!(
-        recall >= 0.85,
-        "recall {recall} < 0.85 (TP={tp}, FN={fn_})"
-    );
-    assert!(
-        fpr <= 0.05,
-        "FPR {fpr} > 0.05 (FP={fp}, TN={tn})"
-    );
+    assert!(recall >= 0.85, "recall {recall} < 0.85 (TP={tp}, FN={fn_})");
+    assert!(fpr <= 0.05, "FPR {fpr} > 0.05 (FP={fp}, TN={tn})");
     assert!(
         fp_reduction_pct >= 20.0,
         "FP_reduction {fp_reduction_pct}% < 20%"
@@ -208,8 +205,7 @@ async fn public_bench_runs_one_invoice_through_orchestrator() {
             finish_reason: FinishReason::Stop,
         }),
     );
-    let agents =
-        themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm, None);
+    let agents = themis_orchestrator::test_support::build_stub_agents_with_mock(mock_llm, None);
     let rooms: Arc<dyn BandRoom> = MockBandRoom::new().into_arc();
     let tenants = Arc::new(TenantRegistry::with_default_tenants());
     let orch = Orchestrator::new(rooms, agents, tenants);
@@ -220,17 +216,13 @@ async fn public_bench_runs_one_invoice_through_orchestrator() {
         .expect("process_invoice must succeed");
     // BAAAR halts when risk_score > 0.85, so the packet
     // carries the halt outcome in the decisions.
-    let has_halt = signed
-        .packet
-        .agent_decisions
-        .iter()
-        .any(|d| {
-            // The risk_score is serialized to JSON; float
-            // formatting may produce "0.95" or "0.94999...".
-            // Match on either.
-            let s = d.payload.to_string();
-            s.contains("0.95") || s.contains("risk_score")
-        });
+    let has_halt = signed.packet.agent_decisions.iter().any(|d| {
+        // The risk_score is serialized to JSON; float
+        // formatting may produce "0.95" or "0.94999...".
+        // Match on either.
+        let s = d.payload.to_string();
+        s.contains("0.95") || s.contains("risk_score")
+    });
     assert!(
         has_halt,
         "expected risk_score or risk_score key in decisions; got {:?}",

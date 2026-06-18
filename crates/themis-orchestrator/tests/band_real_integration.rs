@@ -39,8 +39,7 @@ async fn real_band_room_round_trip() {
         eprintln!("skipped: BAND_API_KEY not set or THEMIS_BAND_MODE!=real");
         return;
     }
-    let python_bin =
-        std::env::var("THEMIS_BAND_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    let python_bin = std::env::var("THEMIS_BAND_PYTHON").unwrap_or_else(|_| "python3".to_string());
     let sdk_module =
         std::env::var("THEMIS_BAND_SDK_MODULE").unwrap_or_else(|_| "band_sdk".to_string());
     let room: Arc<RealBandRoom> = match RealBandRoom::connect(&python_bin, &sdk_module) {

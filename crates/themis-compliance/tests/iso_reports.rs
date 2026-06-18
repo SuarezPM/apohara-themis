@@ -59,7 +59,11 @@ fn test_iso_23894_risk_score_in_range() {
         .get("risk_score")
         .and_then(|v| v.as_f64())
         .expect("risk_score must be a number");
-    assert!((0.0..=1.0).contains(&score), "JSON risk_score out of range: {}", score);
+    assert!(
+        (0.0..=1.0).contains(&score),
+        "JSON risk_score out of range: {}",
+        score
+    );
 }
 
 #[test]

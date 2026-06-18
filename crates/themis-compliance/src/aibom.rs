@@ -231,9 +231,18 @@ pub fn to_cyclonedx_json(aibom: &Aibom) -> serde_json::Value {
         .iter()
         .map(|c| {
             let mut obj = serde_json::Map::new();
-            obj.insert("type".to_string(), serde_json::Value::String(c.component_type.clone()));
-            obj.insert("name".to_string(), serde_json::Value::String(c.name.clone()));
-            obj.insert("version".to_string(), serde_json::Value::String(c.version.clone()));
+            obj.insert(
+                "type".to_string(),
+                serde_json::Value::String(c.component_type.clone()),
+            );
+            obj.insert(
+                "name".to_string(),
+                serde_json::Value::String(c.name.clone()),
+            );
+            obj.insert(
+                "version".to_string(),
+                serde_json::Value::String(c.version.clone()),
+            );
 
             // CycloneDX 1.6 attaches modelCard to machine-learning-model
             // components. The PRD requires a modelCard on the Claude
@@ -328,7 +337,12 @@ mod tests {
             .iter()
             .filter(|c| c.component_type == "application")
             .collect();
-        assert_eq!(apps.len(), 7, "expected 7 application crates, got {}", apps.len());
+        assert_eq!(
+            apps.len(),
+            7,
+            "expected 7 application crates, got {}",
+            apps.len()
+        );
         let names: Vec<&str> = apps.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"themis-orchestrator"));
         assert!(names.contains(&"themis-agents"));
@@ -347,7 +361,12 @@ mod tests {
             .iter()
             .filter(|c| c.component_type == "machine-learning-model")
             .collect();
-        assert_eq!(models.len(), 5, "expected 5 ML models, got {}", models.len());
+        assert_eq!(
+            models.len(),
+            5,
+            "expected 5 ML models, got {}",
+            models.len()
+        );
         let names: Vec<&str> = models.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"claude-fable-5"));
         assert!(names.contains(&"qwen3-coder-30b"));
@@ -375,7 +394,10 @@ mod tests {
         let a = build();
         let j = to_cyclonedx_json(&a);
         // CycloneDX 1.6 spec markers.
-        assert_eq!(j.get("bomFormat").and_then(|v| v.as_str()), Some("CycloneDX"));
+        assert_eq!(
+            j.get("bomFormat").and_then(|v| v.as_str()),
+            Some("CycloneDX")
+        );
         assert_eq!(j.get("specVersion").and_then(|v| v.as_str()), Some("1.6"));
         // serialNumber present and non-empty.
         let serial = j

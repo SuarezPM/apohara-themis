@@ -68,4 +68,3 @@ mod tests {
         assert!(AI_DISCLOSURE_BANNER_HTML.contains("#d4a017"));
     }
 }
-

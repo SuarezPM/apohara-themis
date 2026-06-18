@@ -30,10 +30,10 @@ use themis_evidence::sealchain_wrap::{C2paReceipt, SealChainWrapper};
 use themis_frontend::{APP_CSS, APP_JS, COMPLIANCE_HTML, INDEX_HTML, TOKENS_CSS};
 use tokio_stream::wrappers::BroadcastStream;
 
+use crate::a2a_handler;
 use crate::events::{Event, EventBus, EU_REGISTRATION_ID};
 use crate::fixtures::load_all;
 use crate::orchestrator::Orchestrator;
-use crate::a2a_handler;
 use crate::packet::SignedPacket;
 use crate::pdf;
 use crate::tenants::RoomId;
@@ -110,9 +110,7 @@ pub fn build_default_state(
     // skipped for the lifetime of this process; the Evidence
     // Packet Ed25519+BLAKE3 chain is still verifiable through
     // `themis-verify`.
-    let sealchain_wrapper = SealChainWrapper::new()
-        .ok()
-        .map(std::sync::Arc::new);
+    let sealchain_wrapper = SealChainWrapper::new().ok().map(std::sync::Arc::new);
     AppState {
         orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(orch)),
         event_bus: bus,
@@ -230,8 +228,8 @@ async fn get_events_sse(
         .event(sponsor_event.type_str())
         .data(prelude_json);
     let prelude_stream = futures_util::stream::once(async move { Ok::<_, Infallible>(prelude) });
-    let bus_stream = tokio_stream::StreamExt::filter_map(BroadcastStream::new(rx), |res| {
-        match res {
+    let bus_stream =
+        tokio_stream::StreamExt::filter_map(BroadcastStream::new(rx), |res| match res {
             Ok(event) => {
                 let json = serde_json::to_string(&event).unwrap_or_default();
                 let sse = axum::response::sse::Event::default()
@@ -240,8 +238,7 @@ async fn get_events_sse(
                 Some(Ok::<_, Infallible>(sse))
             }
             Err(_) => None,
-        }
-    });
+        });
     // Disambiguate: `futures_util::StreamExt::chain` (the bus
     // stream implements both `tokio_stream::Stream` and
     // `futures_util::Stream`; the prelude only implements
@@ -406,9 +403,7 @@ async fn post_invoices(
     if let (Some(wrapper), Some(s)) = (state.sealchain_wrapper.as_ref(), sealed.as_ref()) {
         if let Ok(receipt) = wrapper.wrap_packet(s, EU_REGISTRATION_ID) {
             let mock = receipt.mock;
-            state
-                .c2pa_receipts
-                .insert(packet.packet.packet_id, receipt);
+            state.c2pa_receipts.insert(packet.packet.packet_id, receipt);
             state.event_bus.publish(Event::SealChainWrapped {
                 run_id,
                 packet_id: packet.packet.packet_id,

@@ -49,8 +49,8 @@ pub enum Inv15Error {
 /// Gate a prompt through the INV-15 verifier.
 ///
 /// * `Allow` — pass through, no logging.
-/// * `Warn(reason)` — log at WARN level (eprintln! for now; will
-///   move to `tracing` when the orchestrator adopts it), pass
+/// * `Warn(reason)` — log at WARN level via `tracing::warn!`,
+///   pass through. The audit log captures the matched pattern for
 ///   through. The audit log captures the matched pattern for
 ///   forensic review.
 /// * `Block(reason)` — return `Err(Inv15Error::Blocked(reason))`.
@@ -63,7 +63,7 @@ pub async fn verify_and_send(verifier: &Inv15Verifier, prompt: &str) -> Result<S
     match verifier.verify(prompt) {
         Verdict::Allow => Ok(prompt.to_string()),
         Verdict::Warn(reason) => {
-            eprintln!("[themis.inv15] warn: {reason}");
+            tracing::warn!(reason = %reason, "INV-15 Warn verdict — passing prompt through");
             Ok(prompt.to_string())
         }
         Verdict::Block(reason) => Err(Inv15Error::Blocked(reason)),

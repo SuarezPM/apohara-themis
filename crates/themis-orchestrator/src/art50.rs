@@ -18,7 +18,7 @@
 /// `themis_frontend::art50_banner::EU_REGISTRATION_ID` so the
 /// orchestrator and the Evidence Packet (C-10) can reference a
 /// single source of truth.
-pub use themis_frontend::art50_banner::{EU_REGISTRATION_ID, AI_DISCLOSURE_BANNER_HTML};
+pub use themis_frontend::art50_banner::{AI_DISCLOSURE_BANNER_HTML, EU_REGISTRATION_ID};
 
 /// Convenience accessor for the banner HTML, re-exported so
 /// callers can write `art50::banner_html()` without the

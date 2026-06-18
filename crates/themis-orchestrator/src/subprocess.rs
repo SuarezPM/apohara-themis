@@ -35,9 +35,7 @@ use std::process::Command;
 
 use thiserror::Error;
 
-use crate::sandbox::{
-    run_sandboxed, SubprocessSandboxConfig, ThemIsSandboxError,
-};
+use crate::sandbox::{run_sandboxed, SubprocessSandboxConfig, ThemIsSandboxError};
 
 /// Errors raised by [`spawn_band_subprocess`]. Each variant maps to a
 /// fail-closed outcome — the wrapper never spawns unconfined.
@@ -116,7 +114,11 @@ pub async fn spawn_band_subprocess(
         move || run_sandboxed(&cfg, &mut cmd, |r| Ok(r))
     })
     .await
-    .map_err(|e| SpawnError::Sandbox(ThemIsSandboxError::Unavailable(format!("worker panicked: {e}"))))??;
+    .map_err(|e| {
+        SpawnError::Sandbox(ThemIsSandboxError::Unavailable(format!(
+            "worker panicked: {e}"
+        )))
+    })??;
 
     Ok(result)
 }

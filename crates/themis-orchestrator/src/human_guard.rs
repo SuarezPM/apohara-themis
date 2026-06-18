@@ -162,10 +162,7 @@ impl AlertFatigueDetector {
                 break;
             }
         }
-        let count: u32 = guard
-            .len()
-            .try_into()
-            .expect("queue length fits in u32");
+        let count: u32 = guard.len().try_into().expect("queue length fits in u32");
         drop(guard);
         if count > self.max_approvals_per_window {
             Err(AlertFatigueError::RequiresReauth)
@@ -233,10 +230,7 @@ mod tests {
         // Use a 50ms window so the test is fast.
         let d = AlertFatigueDetector::with_params(5, Duration::from_millis(50));
         for _ in 0..5 {
-            assert!(matches!(
-                d.record_approval(),
-                AlertFatigueStatus::Ok { .. }
-            ));
+            assert!(matches!(d.record_approval(), AlertFatigueStatus::Ok { .. }));
         }
         assert!(matches!(
             d.record_approval(),

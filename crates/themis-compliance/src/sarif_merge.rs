@@ -41,8 +41,7 @@ fn default_schema() -> String {
 /// mirror). Other valid URLs exist (OASIS-published); we keep
 /// this one because every CI SARIF consumer we integrate with
 /// validates against the json.schemastore.org copy.
-pub const SARIF_SCHEMA_URL: &str =
-    "https://json.schemastore.org/sarif-2.1.0.json";
+pub const SARIF_SCHEMA_URL: &str = "https://json.schemastore.org/sarif-2.1.0.json";
 
 /// One scanner's run. Maps directly to `runs[]` entries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,7 +179,8 @@ pub fn merge(reports: Vec<SarifReport>) -> SarifReport {
         }
     };
 
-    let mut runs: Vec<SarifRun> = Vec::with_capacity(first.runs.len() + rest.iter().map(|r| r.runs.len()).sum::<usize>());
+    let mut runs: Vec<SarifRun> =
+        Vec::with_capacity(first.runs.len() + rest.iter().map(|r| r.runs.len()).sum::<usize>());
     runs.extend(first.runs.iter().cloned());
     for report in rest {
         runs.extend(report.runs.iter().cloned());
@@ -207,7 +207,10 @@ pub fn to_json(report: &SarifReport) -> serde_json::Value {
             .map(str::is_empty)
             .unwrap_or(true)
         {
-            obj.insert("$schema".to_string(), serde_json::Value::String(SARIF_SCHEMA_URL.to_string()));
+            obj.insert(
+                "$schema".to_string(),
+                serde_json::Value::String(SARIF_SCHEMA_URL.to_string()),
+            );
         }
         obj.entry("version".to_string())
             .or_insert(serde_json::Value::String("2.1.0".to_string()));
@@ -277,12 +280,20 @@ mod tests {
         let codeql = SarifReport {
             schema: SARIF_SCHEMA_URL.to_string(),
             version: "2.1.0".to_string(),
-            runs: vec![fixture_run("CodeQL", "2.20.0", &[("ql/injection", "src/a.rs")])],
+            runs: vec![fixture_run(
+                "CodeQL",
+                "2.20.0",
+                &[("ql/injection", "src/a.rs")],
+            )],
         };
         let themis = SarifReport {
             schema: SARIF_SCHEMA_URL.to_string(),
             version: "2.1.0".to_string(),
-            runs: vec![fixture_run("apohara-compliance", "1.0.0", &[("apohara/dora", "src/b.rs")])],
+            runs: vec![fixture_run(
+                "apohara-compliance",
+                "1.0.0",
+                &[("apohara/dora", "src/b.rs")],
+            )],
         };
         let merged = merge(vec![codeql, themis]);
         assert_eq!(merged.runs.len(), 2);
@@ -394,8 +405,13 @@ mod tests {
         // Each run retains the AI disclosure + model card with datasets.
         for run in json["runs"].as_array().unwrap() {
             assert_eq!(run["properties"]["ai_disclosure"], json!(true));
-            assert_eq!(run["properties"]["model_card"]["name"], "apohara-compliance@1.0.0");
-            let datasets = run["properties"]["model_card"]["datasets"].as_array().unwrap();
+            assert_eq!(
+                run["properties"]["model_card"]["name"],
+                "apohara-compliance@1.0.0"
+            );
+            let datasets = run["properties"]["model_card"]["datasets"]
+                .as_array()
+                .unwrap();
             assert_eq!(datasets.len(), 2);
             assert_eq!(datasets[0]["id"], "invoicenet-1k");
             assert_eq!(datasets[1]["id"], "czech-bank-1k");

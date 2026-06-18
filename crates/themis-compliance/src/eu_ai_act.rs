@@ -81,9 +81,7 @@ pub fn reporting_window_for(severity: IncidentSeverity) -> u32 {
 pub fn severity_for_baaar(reason: &themis_agents::baaar::BaaarReason) -> IncidentSeverity {
     use themis_agents::baaar::BaaarReason;
     match reason {
-        BaaarReason::RiskScoreExceeded | BaaarReason::SecretLeakDetected => {
-            IncidentSeverity::High
-        }
+        BaaarReason::RiskScoreExceeded | BaaarReason::SecretLeakDetected => IncidentSeverity::High,
         BaaarReason::CoherenceTooLow
         | BaaarReason::MaxDebateRoundsReached
         | BaaarReason::ExplicitHaltRequested => IncidentSeverity::Medium,

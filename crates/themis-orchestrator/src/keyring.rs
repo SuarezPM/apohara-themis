@@ -155,10 +155,7 @@ mod tests {
         let a = k.derive_for_tenant("stark");
         let b = k.derive_for_tenant("stark");
         assert_eq!(a.to_bytes(), b.to_bytes());
-        assert_eq!(
-            a.verifying_key().to_bytes(),
-            b.verifying_key().to_bytes()
-        );
+        assert_eq!(a.verifying_key().to_bytes(), b.verifying_key().to_bytes());
     }
 
     #[test]
@@ -220,10 +217,7 @@ mod tests {
         // The full domain-separation tag is exposed as a public
         // constant; assert it's exactly the expected bytes so a
         // future refactor doesn't silently weaken isolation.
-        assert_eq!(
-            BIP32_LIKE_DOMAIN,
-            b"themis-3.0-tenant-keyring-v1"
-        );
+        assert_eq!(BIP32_LIKE_DOMAIN, b"themis-3.0-tenant-keyring-v1");
     }
 
     #[test]

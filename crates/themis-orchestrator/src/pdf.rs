@@ -602,14 +602,7 @@ pub fn render_packet_pdf(packet: &SignedPacket) -> Result<Vec<u8>, PdfError> {
     layer3.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
     let mut y3: f32 = 280.0;
     let lh3: f32 = 6.5;
-    write_line(
-        &layer3,
-        "CISO Executive Summary",
-        20.0,
-        y3,
-        16.0,
-        true,
-    );
+    write_line(&layer3, "CISO Executive Summary", 20.0, y3, 16.0, true);
     y3 -= lh3 * 1.5;
     write_line(
         &layer3,
@@ -647,14 +640,7 @@ pub fn render_packet_pdf(packet: &SignedPacket) -> Result<Vec<u8>, PdfError> {
         false,
     );
     y3 -= lh3;
-    write_line(
-        &layer3,
-        "Controls passed:   31 / 31",
-        20.0,
-        y3,
-        10.0,
-        true,
-    );
+    write_line(&layer3, "Controls passed:   31 / 31", 20.0, y3, 10.0, true);
     y3 -= lh3 * 2.0;
     write_line(
         &layer3,

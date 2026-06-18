@@ -42,8 +42,7 @@ fn test_trust_gate_full_flow() {
     assert!(gate.check(&msg_b, NOW_MS).is_ok());
 
     // The rogue is signed correctly but is NOT in the trust set.
-    let msg_rogue: SignedMessage =
-        sign(serde_json::json!({"from": "rogue"}), &sk_rogue, NOW_MS);
+    let msg_rogue: SignedMessage = sign(serde_json::json!({"from": "rogue"}), &sk_rogue, NOW_MS);
     let err = gate.check(&msg_rogue, NOW_MS).unwrap_err();
     let err_str = format!("{err}");
     assert!(
@@ -59,8 +58,7 @@ fn test_trust_gate_rejects_tampered_message() {
     let mut gate = TrustGate::new(false);
     gate.trust(did, sk.verifying_key());
 
-    let mut msg: SignedMessage =
-        sign(serde_json::json!({"action": "approve"}), &sk, NOW_MS);
+    let mut msg: SignedMessage = sign(serde_json::json!({"action": "approve"}), &sk, NOW_MS);
     assert!(gate.check(&msg, NOW_MS).is_ok());
 
     // Mutate the body after signing — the signature must no longer verify.
@@ -77,8 +75,7 @@ fn test_trust_gate_rejects_old_message() {
 
     // Sign 2 minutes in the past — beyond the 60s skew window.
     let old_ts = NOW_MS - 120_000;
-    let msg: SignedMessage =
-        sign(serde_json::json!({"action": "approve"}), &sk, old_ts);
+    let msg: SignedMessage = sign(serde_json::json!({"action": "approve"}), &sk, old_ts);
     let err = gate.check(&msg, NOW_MS).unwrap_err();
     assert!(
         format!("{err}").contains("skew"),

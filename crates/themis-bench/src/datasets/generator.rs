@@ -20,9 +20,7 @@ pub const LCG_SEED: u64 = 0xDEAD_BEEF_CAFE_F00D;
 
 /// Deterministic LCG (Numerical Recipes). Returns a f64 in [0, 1).
 fn next_lcg(state: &mut u64) -> f64 {
-    *state = state
-        .wrapping_mul(1664525)
-        .wrapping_add(1013904223);
+    *state = state.wrapping_mul(1664525).wrapping_add(1013904223);
     // top 24 bits → [0, 1)
     let v = ((*state >> 40) & 0xFFFFFF) as f64;
     v / 16_777_216.0
@@ -43,17 +41,30 @@ fn round2(x: f64) -> f64 {
 /// `Shell Co / Offshore Vendor / Cash-Only / Unknown LLC` quartet
 /// used in `crates/themis-orchestrator/tests/public_bench.rs`.
 const CLEAN_VENDORS: &[&str] = &[
-    "Globex", "Umbrella", "Cyberdyne", "AcmeCorp", "Soylent", "Hooli",
-    "Initech", "Pied Piper", "Stark Inc", "Wayne Enterprises",
+    "Globex",
+    "Umbrella",
+    "Cyberdyne",
+    "AcmeCorp",
+    "Soylent",
+    "Hooli",
+    "Initech",
+    "Pied Piper",
+    "Stark Inc",
+    "Wayne Enterprises",
 ];
-const FRAUD_VENDORS: &[&str] = &[
-    "Shell Co", "Offshore Vendor", "Cash-Only", "Unknown LLC",
-];
+const FRAUD_VENDORS: &[&str] = &["Shell Co", "Offshore Vendor", "Cash-Only", "Unknown LLC"];
 
 const BANK_TYPES: &[&str] = &["PRIJEM", "VYDAJ", "VYBER"];
 const K_SYMBOLS: &[&str] = &[
-    "SIPO", "UVER", "POJISTNE", "SLUZBY", "UROK", "SANKC. UROK",
-    "DUCHOD", "UDRZBA", "",
+    "SIPO",
+    "UVER",
+    "POJISTNE",
+    "SLUZBY",
+    "UROK",
+    "SANKC. UROK",
+    "DUCHOD",
+    "UDRZBA",
+    "",
 ];
 
 /// Per-dataset offset so the three generators produce independent
@@ -87,9 +98,7 @@ pub fn write_csv(dataset: Dataset) -> Vec<u8> {
             }
         }
         Dataset::AdultIncome => {
-            out.extend_from_slice(
-                b"id,age,education_num,hours_per_week,capital_gain,label\n",
-            );
+            out.extend_from_slice(b"id,age,education_num,hours_per_week,capital_gain,label\n");
             for row in gen_adult_income() {
                 out.extend_from_slice(row.as_bytes());
                 out.push(b'\n');

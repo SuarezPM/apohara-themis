@@ -122,7 +122,9 @@ fn test_verify_receipt_succeeds() {
     let wrapper = fresh_wrapper();
     let packet = sample_packet();
     let receipt = wrapper.wrap_packet(&packet, EU_REG_ID).expect("wrap");
-    let verified = wrapper.verify_receipt(&receipt).expect("verify must not error");
+    let verified = wrapper
+        .verify_receipt(&receipt)
+        .expect("verify must not error");
     assert!(verified, "wrap -> verify must return Ok(true)");
 }
 
@@ -182,10 +184,18 @@ fn test_receipt_carries_mock_flag_for_either_path() {
     let packet = sample_packet();
     let receipt = wrapper.wrap_packet(&packet, EU_REG_ID).expect("wrap");
     // The receipt MUST carry a `mock` flag — downstream verifiers
-    // (and the demo frontend badge) rely on it.
+    // (and the demo frontend badge) rely on it. The receipt is
+    // serialized to JSON and the field is asserted to be present
+    // (not its value, since the MVP always returns `mock=true`
+    // unless the real sealchain-core path is taken). This proves
+    // the field round-trips through serde.
+    let serialized = serde_json::to_value(&receipt).expect("serialize");
+    let mock_field = serialized
+        .get("mock")
+        .expect("receipt JSON must contain a `mock` field");
     assert!(
-        receipt.mock || !receipt.mock,
-        "receipt must carry the mock flag"
+        mock_field.is_boolean(),
+        "`mock` field must be a boolean (got {mock_field:?})"
     );
     // The C2PA manifest must also carry the same flag at the
     // manifest level.

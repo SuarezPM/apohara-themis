@@ -100,7 +100,11 @@ mod tests {
         let did = Did::from_verifying_key(&pk);
         let mut gate = TrustGate::new(false);
         gate.trust(did.clone(), pk);
-        let msg = sign(serde_json::json!({"action": "approve"}), &sk, 1_700_000_000_000);
+        let msg = sign(
+            serde_json::json!({"action": "approve"}),
+            &sk,
+            1_700_000_000_000,
+        );
         assert!(gate.check(&msg, 1_700_000_000_000).is_ok());
     }
 
@@ -109,7 +113,11 @@ mod tests {
         let sk = fresh_key();
         let did = Did::from_verifying_key(&sk.verifying_key());
         let gate = TrustGate::new(false); // empty trust set
-        let msg = sign(serde_json::json!({"action": "approve"}), &sk, 1_700_000_000_000);
+        let msg = sign(
+            serde_json::json!({"action": "approve"}),
+            &sk,
+            1_700_000_000_000,
+        );
         let err = gate.check(&msg, 1_700_000_000_000).unwrap_err();
         assert!(matches!(err, TrustGateError::UntrustedDid(d) if d == did.to_string()));
     }
@@ -127,7 +135,11 @@ mod tests {
     fn check_accepts_unsigned_when_test_flag() {
         let sk = fresh_key();
         let gate = TrustGate::new(true); // test flag on
-        let msg = sign(serde_json::json!({"action": "approve"}), &sk, 1_700_000_000_000);
+        let msg = sign(
+            serde_json::json!({"action": "approve"}),
+            &sk,
+            1_700_000_000_000,
+        );
         assert!(gate.check(&msg, 1_700_000_000_000).is_ok());
     }
 }

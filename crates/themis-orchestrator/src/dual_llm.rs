@@ -87,7 +87,7 @@ impl RedactionPolicy {
                 Err(e) => {
                     // Default patterns MUST compile; if one doesn't,
                     // the policy is broken and we surface it loudly.
-                    eprintln!("[themis.dual_llm] default redaction pattern failed to compile: {e}");
+                    tracing::error!(error = %e, "default redaction pattern failed to compile — policy is broken");
                 }
             }
         }
@@ -131,10 +131,7 @@ pub struct DualLlm {
 
 impl DualLlm {
     /// Build a `DualLlm` with the default redaction policy.
-    pub fn new(
-        privileged: Box<dyn LlmBackend>,
-        quarantined: Box<dyn LlmBackend>,
-    ) -> Self {
+    pub fn new(privileged: Box<dyn LlmBackend>, quarantined: Box<dyn LlmBackend>) -> Self {
         Self {
             privileged,
             quarantined,
@@ -250,7 +247,10 @@ mod tests {
         let policy = RedactionPolicy::with_defaults();
         let out = policy.apply("Send to alice@example.com about it");
         assert!(!out.contains("alice@example.com"), "email leaked: {out}");
-        assert!(out.contains("[REDACTED]"), "redaction marker missing: {out}");
+        assert!(
+            out.contains("[REDACTED]"),
+            "redaction marker missing: {out}"
+        );
     }
 
     #[test]
@@ -258,7 +258,10 @@ mod tests {
         let policy = RedactionPolicy::with_defaults();
         let out = policy.apply("Call 555-123-4567 tomorrow");
         assert!(!out.contains("555-123-4567"), "phone leaked: {out}");
-        assert!(out.contains("[REDACTED]"), "redaction marker missing: {out}");
+        assert!(
+            out.contains("[REDACTED]"),
+            "redaction marker missing: {out}"
+        );
     }
 
     #[test]

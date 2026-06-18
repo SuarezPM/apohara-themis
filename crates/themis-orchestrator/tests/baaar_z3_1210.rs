@@ -54,7 +54,13 @@ fn inputs_strategy() -> BoxedStrategy<BaaarInputs> {
         any::<bool>(),
     )
         .prop_map(
-            |(risk_score, security_severity, coherence_score, debate_rounds, explicit_halt_requested)| {
+            |(
+                risk_score,
+                security_severity,
+                coherence_score,
+                debate_rounds,
+                explicit_halt_requested,
+            )| {
                 BaaarInputs {
                     risk_score,
                     security_severity,
@@ -154,6 +160,12 @@ fn baaar_manual_threshold_sweep() {
 
     // Sanity: the loop must run the expected number of cases.
     // 5 * 3 * 3 * 4 * 2 = 360. The story spec asks for ≥100.
-    assert_eq!(count, 360, "manual sweep should produce 360 cases, got {count}");
-    assert!(count >= MANUAL_CASES_MIN, "manual sweep produced {count} < {MANUAL_CASES_MIN} cases");
+    assert_eq!(
+        count, 360,
+        "manual sweep should produce 360 cases, got {count}"
+    );
+    assert!(
+        count >= MANUAL_CASES_MIN,
+        "manual sweep produced {count} < {MANUAL_CASES_MIN} cases"
+    );
 }

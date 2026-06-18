@@ -290,9 +290,12 @@ impl EvidenceService {
         // window (default 6 months per EU AI Act Art 12), the
         // append is rejected with `ChainError::RetentionExceeded`.
         // Empty chains (genesis append) always pass.
-        self.chain
-            .enforce_retention(&self.retention, chrono::Utc::now().timestamp_millis(),
-                &self.signer.tenant_id(), self.jurisdiction.as_str())?;
+        self.chain.enforce_retention(
+            &self.retention,
+            chrono::Utc::now().timestamp_millis(),
+            &self.signer.tenant_id(),
+            self.jurisdiction.as_str(),
+        )?;
         self.chain.append(payload)?;
 
         // 5. Request a timestamp.

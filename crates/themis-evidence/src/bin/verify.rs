@@ -187,9 +187,7 @@ fn main() -> ExitCode {
                         .and_then(|a| a.as_array())
                         .map(|a| a.len())
                         .unwrap_or(0);
-                    println!(
-                        "  sealchain:     wrap={mock_flag}, c2pa_assertions={assertions}"
-                    );
+                    println!("  sealchain:     wrap={mock_flag}, c2pa_assertions={assertions}");
                 }
                 None => {
                     println!("  sealchain:     not wrapped (SealChain disabled or pre-C-10)");

@@ -53,7 +53,10 @@ fn fria_full_flow() {
     );
     assert_eq!(j.get("tenant_id").and_then(|v| v.as_str()), Some("stark"));
     let score = j.get("risk_score").and_then(|v| v.as_f64()).unwrap();
-    assert!((score - 0.37).abs() < 1e-5, "risk_score in JSON must be 0.37, got {score}");
+    assert!(
+        (score - 0.37).abs() < 1e-5,
+        "risk_score in JSON must be 0.37, got {score}"
+    );
     let arr = j
         .get("elements")
         .and_then(|v| v.as_array())
@@ -86,7 +89,10 @@ fn aibom_full_flow() {
 
     // CycloneDX 1.6 spec compliance.
     let j = aibom::to_cyclonedx_json(&a);
-    assert_eq!(j.get("bomFormat").and_then(|v| v.as_str()), Some("CycloneDX"));
+    assert_eq!(
+        j.get("bomFormat").and_then(|v| v.as_str()),
+        Some("CycloneDX")
+    );
     assert_eq!(j.get("specVersion").and_then(|v| v.as_str()), Some("1.6"));
     let serial = j
         .get("serialNumber")
@@ -129,12 +135,24 @@ fn aibom_contains_model_card() {
         .model_parameters
         .as_object()
         .expect("modelParameters must be a JSON object");
-    assert!(params.contains_key("architecture"), "modelParameters must include architecture");
-    assert!(params.contains_key("context_window_tokens"), "modelParameters must include context_window_tokens");
-    assert!(params.contains_key("provider"), "modelParameters must include provider");
+    assert!(
+        params.contains_key("architecture"),
+        "modelParameters must include architecture"
+    );
+    assert!(
+        params.contains_key("context_window_tokens"),
+        "modelParameters must include context_window_tokens"
+    );
+    assert!(
+        params.contains_key("provider"),
+        "modelParameters must include provider"
+    );
 
     // intendedUse non-empty.
-    assert!(!card.intended_use.is_empty(), "intendedUse must be populated");
+    assert!(
+        !card.intended_use.is_empty(),
+        "intendedUse must be populated"
+    );
 
     // In CycloneDX JSON, the modelCard is rendered under the
     // `modelCard` key with the same shape.
@@ -147,8 +165,14 @@ fn aibom_contains_model_card() {
     let mcard = claude_json
         .get("modelCard")
         .expect("claude-fable-5 must render a modelCard key");
-    assert!(mcard.get("modelParameters").is_some(), "rendered modelCard must include modelParameters");
-    assert!(mcard.get("intendedUse").is_some(), "rendered modelCard must include intendedUse");
+    assert!(
+        mcard.get("modelParameters").is_some(),
+        "rendered modelCard must include modelParameters"
+    );
+    assert!(
+        mcard.get("intendedUse").is_some(),
+        "rendered modelCard must include intendedUse"
+    );
 }
 
 #[test]
@@ -170,7 +194,10 @@ fn aibom_contains_datasets_provenance() {
         !dataset.provenance.is_empty(),
         "datasets[].provenance must be populated (PRD requirement)"
     );
-    assert!(dataset.provenance.contains("Stanford"), "provenance should reference Stanford");
+    assert!(
+        dataset.provenance.contains("Stanford"),
+        "provenance should reference Stanford"
+    );
     assert!(!dataset.license.is_empty(), "license must be populated");
 
     // In the CycloneDX JSON, the dataset is rendered under
@@ -185,7 +212,11 @@ fn aibom_contains_datasets_provenance() {
         .get("components")
         .and_then(|v| v.as_array())
         .expect("claude-fable-5 must render a sub-components array for datasets");
-    assert_eq!(subs.len(), 1, "claude-fable-5 must have 1 dataset sub-component");
+    assert_eq!(
+        subs.len(),
+        1,
+        "claude-fable-5 must have 1 dataset sub-component"
+    );
     let data = &subs[0];
     assert_eq!(data.get("type").and_then(|v| v.as_str()), Some("data"));
     let props = data
@@ -197,7 +228,10 @@ fn aibom_contains_datasets_provenance() {
         .find(|p| p.get("name").and_then(|v| v.as_str()) == Some("provenance"))
         .expect("dataset must have a provenance property");
     assert!(
-        prov.get("value").and_then(|v| v.as_str()).unwrap_or("").contains("Stanford"),
+        prov.get("value")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("Stanford"),
         "rendered provenance must mention Stanford"
     );
 }
@@ -211,15 +245,7 @@ fn qms_full_flow() {
     let ids: Vec<&str> = report.sops.iter().map(|s| s.id.as_str()).collect();
     assert_eq!(
         ids,
-        vec![
-            "SOP-001",
-            "SOP-002",
-            "SOP-003",
-            "SOP-004",
-            "SOP-005",
-            "SOP-006",
-            "SOP-007",
-        ]
+        vec!["SOP-001", "SOP-002", "SOP-003", "SOP-004", "SOP-005", "SOP-006", "SOP-007",]
     );
 
     // Each SOP has non-empty id, title, and last_reviewed.
@@ -230,14 +256,23 @@ fn qms_full_flow() {
 
     // JSON shape.
     let j = qms::to_json(&report);
-    assert_eq!(j.get("framework").and_then(|v| v.as_str()), Some("eu_ai_act_art_17_qms"));
+    assert_eq!(
+        j.get("framework").and_then(|v| v.as_str()),
+        Some("eu_ai_act_art_17_qms")
+    );
     assert_eq!(j.get("sop_count").and_then(|v| v.as_u64()), Some(7));
-    let sops = j.get("sops").and_then(|v| v.as_array()).expect("sops must be an array");
+    let sops = j
+        .get("sops")
+        .and_then(|v| v.as_array())
+        .expect("sops must be an array");
     assert_eq!(sops.len(), 7);
     for (i, s) in sops.iter().enumerate() {
         assert!(s.get("id").is_some(), "SOP {i} missing id in JSON");
         assert!(s.get("title").is_some(), "SOP {i} missing title in JSON");
-        assert!(s.get("last_reviewed").is_some(), "SOP {i} missing last_reviewed in JSON");
+        assert!(
+            s.get("last_reviewed").is_some(),
+            "SOP {i} missing last_reviewed in JSON"
+        );
     }
 }
 

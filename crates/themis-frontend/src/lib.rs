@@ -44,8 +44,7 @@ pub const APP_JS: &str = include_str!("../static/app.js");
 /// A2A 1.0 agent card (Google Agent2Agent protocol, served at
 /// `/.well-known/agent-card.json` so external peers can discover
 /// the orchestrator). Story C-01 / G26.
-pub const AGENT_CARD_JSON: &str =
-    include_str!("../static/.well-known/agent-card.json");
+pub const AGENT_CARD_JSON: &str = include_str!("../static/.well-known/agent-card.json");
 
 /// Machine-readable list of all 6 agents in the orchestrator's
 /// fleet, served at `/agents.json`. Story C-01 / G25.
@@ -67,8 +66,8 @@ mod tests {
     /// peer validator checks before dispatching a request.
     #[test]
     fn agent_card_validates_against_a2a_1_0() {
-        let v: serde_json::Value = serde_json::from_str(AGENT_CARD_JSON)
-            .expect("agent card must be valid JSON");
+        let v: serde_json::Value =
+            serde_json::from_str(AGENT_CARD_JSON).expect("agent card must be valid JSON");
         assert_eq!(v["protocolVersion"], "1.0");
         assert_eq!(v["name"], "THEMIS Orchestrator");
         let skills = v["skills"].as_array().expect("skills array");

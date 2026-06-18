@@ -197,11 +197,7 @@ pub fn derive() -> Iso23894Report {
     let raw: f32 = if events.is_empty() {
         0.0
     } else {
-        events
-            .iter()
-            .map(|e| e.likelihood * e.impact)
-            .sum::<f32>()
-            / events.len() as f32
+        events.iter().map(|e| e.likelihood * e.impact).sum::<f32>() / events.len() as f32
     };
     let risk_score = raw.clamp(0.0, 1.0);
 
@@ -239,11 +235,20 @@ mod tests {
     #[test]
     fn derive_includes_8_categories() {
         let r = derive();
-        assert_eq!(r.events.len(), 8, "expected 8 risk events, got {}", r.events.len());
+        assert_eq!(
+            r.events.len(),
+            8,
+            "expected 8 risk events, got {}",
+            r.events.len()
+        );
         // One event per category — every variant represented exactly once.
         let mut seen = std::collections::HashSet::new();
         for e in &r.events {
-            assert!(seen.insert(e.category), "duplicate category: {:?}", e.category);
+            assert!(
+                seen.insert(e.category),
+                "duplicate category: {:?}",
+                e.category
+            );
         }
         assert!(seen.contains(&RiskCategory::R1_DataQuality));
         assert!(seen.contains(&RiskCategory::R2_Bias));
@@ -284,7 +289,10 @@ mod tests {
     fn to_json_serializes_all_events() {
         let r = derive();
         let j = to_json(&r);
-        assert_eq!(j.get("standard").and_then(|v| v.as_str()), Some("ISO/IEC 23894:2023"));
+        assert_eq!(
+            j.get("standard").and_then(|v| v.as_str()),
+            Some("ISO/IEC 23894:2023")
+        );
         let events = j
             .get("events")
             .and_then(|v| v.as_array())
@@ -292,8 +300,14 @@ mod tests {
         assert_eq!(events.len(), 8);
         for (i, ev) in events.iter().enumerate() {
             assert!(ev.get("category").is_some(), "event {i} missing category");
-            assert!(ev.get("description").is_some(), "event {i} missing description");
-            assert!(ev.get("likelihood").is_some(), "event {i} missing likelihood");
+            assert!(
+                ev.get("description").is_some(),
+                "event {i} missing description"
+            );
+            assert!(
+                ev.get("likelihood").is_some(),
+                "event {i} missing likelihood"
+            );
             assert!(ev.get("impact").is_some(), "event {i} missing impact");
             assert!(ev.get("score").is_some(), "event {i} missing score");
             assert!(ev.get("timestamp").is_some(), "event {i} missing timestamp");
@@ -303,6 +317,10 @@ mod tests {
             .get("risk_score")
             .and_then(|v| v.as_f64())
             .expect("risk_score must be a number");
-        assert!((0.0..=1.0).contains(&score), "JSON risk_score out of range: {}", score);
+        assert!(
+            (0.0..=1.0).contains(&score),
+            "JSON risk_score out of range: {}",
+            score
+        );
     }
 }

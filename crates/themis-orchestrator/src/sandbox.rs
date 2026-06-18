@@ -47,9 +47,7 @@ use apohara_agentguard::config::Config as AgentGuardConfig;
 use apohara_agentguard::firewall;
 use apohara_agentguard::hook::contract::HookInput;
 use apohara_agentguard::policy::engine::{PolicyError, PolicySet};
-use apohara_agentguard::sandbox::{
-    PermissionTier, SandboxRequest, SandboxResult, SandboxRunner,
-};
+use apohara_agentguard::sandbox::{PermissionTier, SandboxRequest, SandboxResult, SandboxRunner};
 use apohara_agentguard::verdict::{Thresholds, Verdict};
 use thiserror::Error;
 
@@ -169,14 +167,12 @@ where
         argv.push(a.to_string_lossy().to_string());
     }
 
-    debug_log(
-        &format!(
-            "sandbox::run_sandboxed: dispatching tier={} program={} argv_len={}",
-            config.tier,
-            program,
-            argv.len()
-        ),
-    );
+    debug_log(&format!(
+        "sandbox::run_sandboxed: dispatching tier={} program={} argv_len={}",
+        config.tier,
+        program,
+        argv.len()
+    ));
 
     let request = SandboxRequest {
         command: argv,
@@ -268,12 +264,12 @@ pub fn redact(text: &str) -> String {
 /// on `tracing`; adding it for these two warnings would be more weight
 /// than the seam is worth.
 fn debug_log(msg: &str) {
-    eprintln!("[themis.sandbox:debug] {msg}");
+    tracing::info!("[themis.sandbox:debug] {msg}");
 }
 
 /// Internal: a warning-level log line (see `debug_log` for the rationale).
 fn warn_log(msg: &str) {
-    eprintln!("[themis.sandbox:warn] {msg}");
+    tracing::warn!("[themis.sandbox:warn] {msg}");
 }
 
 #[cfg(test)]

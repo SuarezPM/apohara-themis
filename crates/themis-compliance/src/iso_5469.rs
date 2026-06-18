@@ -71,8 +71,7 @@ pub fn derive() -> Iso5469Report {
         // Condition 3: coherence_score < 0.3 — MEDIUM (model degraded).
         HaltEvent {
             run_id: "run-baar-003".to_string(),
-            reason: "inter-agent coherence score dropped below 0.3 (BAAAR condition 3)"
-                .to_string(),
+            reason: "inter-agent coherence score dropped below 0.3 (BAAAR condition 3)".to_string(),
             severity: "MEDIUM".to_string(),
             timestamp: now,
         },
@@ -156,7 +155,10 @@ mod tests {
     fn to_json_serializes_all_halts() {
         let r = derive();
         let j = to_json(&r);
-        assert_eq!(j.get("standard").and_then(|v| v.as_str()), Some("ISO/IEC 5469"));
+        assert_eq!(
+            j.get("standard").and_then(|v| v.as_str()),
+            Some("ISO/IEC 5469")
+        );
         let total = j
             .get("total_halts")
             .and_then(|v| v.as_u64())

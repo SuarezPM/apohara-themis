@@ -806,11 +806,17 @@ async fn e2e_sponsor_stack_event_emitted_first_on_sse_connect() {
         "band label must mention band-sdk: {v:?}"
     );
     assert!(
-        v["aiml_api"].as_str().unwrap().contains("claude-sonnet-4.5"),
+        v["aiml_api"]
+            .as_str()
+            .unwrap()
+            .contains("claude-sonnet-4.5"),
         "aiml_api label must include claude-sonnet-4.5: {v:?}"
     );
     assert!(
-        v["featherless"].as_str().unwrap().contains("Qwen3-Coder-30B"),
+        v["featherless"]
+            .as_str()
+            .unwrap()
+            .contains("Qwen3-Coder-30B"),
         "featherless label must include Qwen3-Coder-30B: {v:?}"
     );
 }

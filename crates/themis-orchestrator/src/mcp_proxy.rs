@@ -101,9 +101,9 @@ pub struct McpProxyResponse {
 /// requiring the upstream server to speak a non-standard
 /// scheme.
 pub fn mcp_uri_to_http(mcp_uri: &str) -> Result<String, McpProxyError> {
-    let stripped = mcp_uri
-        .strip_prefix("mcp://")
-        .ok_or_else(|| McpProxyError::InvalidUri(format!("expected mcp:// scheme, got {mcp_uri}")))?;
+    let stripped = mcp_uri.strip_prefix("mcp://").ok_or_else(|| {
+        McpProxyError::InvalidUri(format!("expected mcp:// scheme, got {mcp_uri}"))
+    })?;
 
     if stripped.is_empty() || stripped.contains("://") {
         return Err(McpProxyError::InvalidUri(format!(
@@ -195,10 +195,7 @@ pub async fn run(config: McpProxyConfig) -> Result<(), McpProxyError> {
         .await
         .map_err(|e| McpProxyError::Bind(format!("{e}: {}", config.bind_addr)))?;
 
-    eprintln!(
-        "mcp_proxy listening on {} (forwarding JSON-RPC to {upstream})",
-        config.bind_addr
-    );
+    tracing::info!(bind_addr = %config.bind_addr, upstream = %upstream, "mcp_proxy listening");
 
     loop {
         let accept = listener.accept().await;
@@ -251,7 +248,10 @@ mod tests {
             pick_cors_origin(&allowed, Some("https://themis.apohara.dev")),
             Some("https://themis.apohara.dev".to_string())
         );
-        assert_eq!(pick_cors_origin(&allowed, Some("https://evil.example")), None);
+        assert_eq!(
+            pick_cors_origin(&allowed, Some("https://evil.example")),
+            None
+        );
         assert_eq!(pick_cors_origin(&allowed, None), None);
         assert_eq!(pick_cors_origin(&[], Some("https://anything")), None);
     }

@@ -203,22 +203,37 @@ mod tests {
         assert!((r.risk_score - 0.42).abs() < 1e-6);
         // The Risk Assessment element text must include the score.
         let (_, text) = &r.elements[0];
-        assert!(text.contains("0.42"), "text must include risk score: {text}");
+        assert!(
+            text.contains("0.42"),
+            "text must include risk score: {text}"
+        );
     }
 
     #[test]
     fn to_json_serializes_all_elements() {
         let r = derive(&sample());
         let j = to_json(&r);
-        let arr = j.get("elements").and_then(|v| v.as_array()).expect("elements must be an array");
+        let arr = j
+            .get("elements")
+            .and_then(|v| v.as_array())
+            .expect("elements must be an array");
         assert_eq!(arr.len(), 5);
         // Each element has `element` and `analysis` keys.
         for (i, entry) in arr.iter().enumerate() {
-            assert!(entry.get("element").is_some(), "entry {i} missing element key");
-            assert!(entry.get("analysis").is_some(), "entry {i} missing analysis key");
+            assert!(
+                entry.get("element").is_some(),
+                "entry {i} missing element key"
+            );
+            assert!(
+                entry.get("analysis").is_some(),
+                "entry {i} missing analysis key"
+            );
         }
         // Framework + risk score + tenant propagated.
-        assert_eq!(j.get("framework").and_then(|v| v.as_str()), Some("eu_ai_act_art_27_fria"));
+        assert_eq!(
+            j.get("framework").and_then(|v| v.as_str()),
+            Some("eu_ai_act_art_27_fria")
+        );
         assert_eq!(j.get("tenant_id").and_then(|v| v.as_str()), Some("stark"));
         assert!(j.get("risk_score").and_then(|v| v.as_f64()).is_some());
     }

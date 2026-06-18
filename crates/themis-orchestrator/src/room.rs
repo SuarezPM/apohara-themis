@@ -455,10 +455,7 @@ impl BandRoom for RealBandRoom {
         body: &str,
         mentions: Vec<String>,
     ) -> Result<(), BandError> {
-        let band_room = self
-            .rooms
-            .get(&room)
-            .ok_or(BandError::UnknownRoom(room))?;
+        let band_room = self.rooms.get(&room).ok_or(BandError::UnknownRoom(room))?;
         let req = Self::request(
             "send_message",
             serde_json::json!({
@@ -473,10 +470,7 @@ impl BandRoom for RealBandRoom {
     }
 
     async fn history(&self, room: RoomId) -> Result<Vec<BandMessage>, BandError> {
-        let band_room = self
-            .rooms
-            .get(&room)
-            .ok_or(BandError::UnknownRoom(room))?;
+        let band_room = self.rooms.get(&room).ok_or(BandError::UnknownRoom(room))?;
         let req = Self::request(
             "get_history",
             serde_json::json!({"chatroom_id": band_room.value().0}),
@@ -554,13 +548,13 @@ pub fn try_real_band_room() -> Option<Arc<RealBandRoom>> {
     match RealBandRoom::connect(&python_bin, &sdk_module) {
         Ok(room) => {
             let peers = room.peer_count();
-            eprintln!(
-                "[band] real mode: ready, peer_discovery={peers} (BAND_API_KEY set, THEMIS_BAND_MODE=real)"
-            );
+            tracing::info!("[band] real mode: ready, peer_discovery={peers} (BAND_API_KEY set, THEMIS_BAND_MODE=real)");
             Some(room)
         }
         Err(e) => {
-            eprintln!("[band] real mode: construction failed ({e}); falling back to scripted");
+            tracing::error!(
+                "[band] real mode: construction failed ({e}); falling back to scripted"
+            );
             None
         }
     }

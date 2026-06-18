@@ -119,10 +119,7 @@ impl Default for Iso42001Fields {
     fn default() -> Self {
         Self {
             risk_assessment_conducted: true,
-            impact_assessment_ref: format!(
-                "themis-compliance v{}",
-                env!("CARGO_PKG_VERSION")
-            ),
+            impact_assessment_ref: format!("themis-compliance v{}", env!("CARGO_PKG_VERSION")),
             monitoring_mechanism: "BAAAR-gate + 310+-test suite".to_string(),
             improvement_cycle: "post-hackathon sprint (vNext roadmap)".to_string(),
             lifecycle_stage: "production".to_string(),
