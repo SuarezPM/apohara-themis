@@ -75,6 +75,9 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
         sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: None,
     };
     build_router(state)
 }

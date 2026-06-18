@@ -109,6 +109,9 @@ fn router_for(f: &DemoInvoice) -> axum::Router {
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
         sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: None,
     };
     build_router(state)
 }
@@ -597,6 +600,9 @@ async fn e2e_provider_active_event_includes_model_id() {
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
         sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: None,
     };
     let app = build_router(state);
 
@@ -896,6 +902,9 @@ async fn e2e_agent_handoff_events_emitted_in_order() {
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
         sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: None,
     };
     let app = build_router(state);
     let resp = app
@@ -1030,6 +1039,9 @@ async fn multi_model_dispatch_routes_per_agent() {
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
         sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: None,
     };
     let app = build_router(state);
     let resp = app
@@ -1137,6 +1149,9 @@ async fn incident_reported_event_fires_on_baaar_halt() {
         model_id: mock_llm.model_id().to_string(),
         band_room: None,
         sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: None,
     };
     let app = build_router(state);
     let resp = app

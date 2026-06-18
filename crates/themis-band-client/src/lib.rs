@@ -1,14 +1,18 @@
 //! themis-band-client — Band client wrapper for THEMIS.
 //!
-//! Subprocess wrapper around the Band Python SDK. Persistent child
-//! process per Band room, JSON over stdin/stdout for control
-//! plane (`create_room`, `get_history`, `post_message`), WebSocket
-//! for real-time @mention events.
+//! Two integration surfaces:
 //!
-//! Production wire is documented in the plan's ADR-001; this
-//! skeleton ships the trait + types + mock + Python subprocess
-//! bridge + WS event stream. The actual `band-sdk[langgraph]==0.2.11`
-//! integration is a follow-up sprint.
+//! 1. **Legacy Python control plane** (`python_bridge.rs`,
+//!    `RealBandRoom` in the orchestrator) — JSON-over-stdio for
+//!    `create_chatroom` / `send_message` / `get_history`. Used by
+//!    the per-invoice orchestrator flow.
+//!
+//! 2. **Per-agent WebSocket** (`socket.rs`, `fleet.rs`) — one
+//!    Python subprocess per agent (`scripts/run_agent.py`) opens a
+//!    persistent Phoenix Channels WebSocket at
+//!    `wss://app.band.ai/api/v1/socket/websocket`, joins a chatroom,
+//!    and streams events to stdout. Used for the public live chat
+//!    room (AC Ola-A).
 
 #![warn(missing_docs)]
 
@@ -19,8 +23,10 @@ pub fn version() -> &'static str {
 
 pub mod client;
 pub mod error;
+pub mod fleet;
 pub mod python_bridge;
 pub mod signed_message;
+pub mod socket;
 pub mod trust_gate;
 pub mod types;
 pub mod ws;

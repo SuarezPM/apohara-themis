@@ -86,6 +86,24 @@ pub struct AppState {
     /// SSE connect. The frontend renders the 3 logos in a
     /// fixed banner above the Band room transcript.
     pub sponsor_stack: crate::events::SponsorStackInfo,
+    /// Band live room integration (Story Ola-A): the
+    /// `BandLiveState` holds the 6-agent WebSocket fleet and a
+    /// broadcast sink for `/band-live` SSE.
+    pub band_live: Option<std::sync::Arc<crate::band_live::BandLiveState>>,
+    /// Featherless AI live-call metrics (Story Ola-C). The
+    /// `FeatherlessBackend` accumulates counters here on every
+    /// fraud_auditor call; `GET /metrics/featherless` snapshots
+    /// and serves them as JSON. `None` for tests that don't
+    /// exercise the Featherless path (or when `FEATHERLESS_API_KEY`
+    /// is unset — the binary never panics on a missing key).
+    pub featherless_metrics: Option<
+        themis_compliance::featherless_metrics::FeatherlessMetricsHandle,
+    >,
+    /// AI/ML API live-call metrics (Story Ola-B). The
+    /// `AIMLAPIBackend` accumulates counters here on every
+    /// call; `GET /metrics/aiml` snapshots and serves them as
+    /// JSON. `None` for tests that don't exercise the AIML path.
+    pub aiml_metrics: Option<themis_compliance::aiml_metrics::AimlApiMetricsHandle>,
 }
 
 /// Build the production-shaped `AppState`. Used by `main()` and
@@ -123,6 +141,9 @@ pub fn build_default_state(
         model_id,
         band_room: Some(room_concrete),
         sponsor_stack: crate::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: Some(std::sync::Arc::new(crate::band_live::BandLiveState::new())),
     }
 }
 
@@ -167,6 +188,10 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::post(post_human_override),
         )
         .route("/rooms/:room_id/transcript", get(get_room_transcript))
+        // Story Ola-B: live AIML call counters. Polled by the
+        // dashboard widget every 2s. Returns the empty
+        // snapshot when no sink is attached (test builds).
+        .route("/metrics/aiml", get(get_aiml_metrics))
         .route("/aibom", get(get_aibom))
         // A2A 1.0 discovery (Story C-01 / G24-G26). The
         // `/.well-known/agent-card.json` route serves the
@@ -179,6 +204,13 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/agents.json", get(a2a_handler::get_agents_json))
         .route("/a2a", axum::routing::post(a2a_handler::post_a2a))
+        // Story Ola-C: live Featherless call counters.
+        // fraud_auditor is the only agent routed to
+        // Featherless (Qwen3-Coder-30B-A3B-Instruct); the
+        // counters here are the fraud_auditor call surface.
+        // Polled by the dashboard widget every 2s. Returns
+        // a zero snapshot when no sink is attached.
+        .route("/metrics/featherless", get(get_featherless_metrics))
         .with_state(state)
 }
 
@@ -760,6 +792,9 @@ mod tests {
             model_id: "mock-fallback".to_string(),
             band_room: None,
             sponsor_stack: crate::events::SponsorStackInfo::default(),
+            featherless_metrics: None,
+            aiml_metrics: None,
+            band_live: None,
         }
     }
 
@@ -982,7 +1017,59 @@ mod tests {
     }
 }
 
-/// GET /aibom — serves the live CycloneDX 1.6 AIBOM as JSON.
+/// `GET /metrics/featherless` — Story Ola-C. Returns the live
+/// Featherless call counters (calls, successes, avg/p95
+/// latency, cost, tokens) as JSON. The dashboard widget polls
+/// this every 2s via the standard `fetch` API. When no metrics
+/// sink is attached (test builds, or `FEATHERLESS_API_KEY`
+/// unset) the response is a fully-populated zero snapshot so
+/// the frontend can render "live · 0 calls" without
+/// special-casing the empty path. Mirrors the AIML widget's
+/// contract so the two render with the same template.
+async fn get_featherless_metrics(
+    State(state): State<Arc<AppState>>,
+) -> Json<themis_compliance::featherless_metrics::FeatherlessMetrics> {
+    let snap = match state.featherless_metrics.as_ref() {
+        Some(handle) => handle.snapshot(),
+        None => themis_compliance::featherless_metrics::FeatherlessMetrics {
+            calls: 0,
+            successes: 0,
+            avg_latency_ms: 0.0,
+            p95_latency_ms: 0.0,
+            total_cost_usd: 0.0,
+            total_tokens_in: 0,
+            total_tokens_out: 0,
+            model: String::new(),
+        },
+    };
+    Json(snap)
+}
+
+/// `GET /metrics/aiml` — Story Ola-B. Returns the live AIML API
+/// call counters (calls, successes, avg/p95 latency, cost,
+/// tokens) as JSON. The dashboard widget polls this every 2s
+/// via the standard `fetch` API. When no metrics sink is
+/// attached (test builds) the response is a fully-populated
+/// zero snapshot so the frontend can render "live · 0 calls"
+/// without special-casing the empty path.
+async fn get_aiml_metrics(
+    State(state): State<Arc<AppState>>,
+) -> Json<themis_compliance::aiml_metrics::AimlApiMetrics> {
+    let snap = match state.aiml_metrics.as_ref() {
+        Some(handle) => handle.snapshot(),
+        None => themis_compliance::aiml_metrics::AimlApiMetrics {
+            calls: 0,
+            successes: 0,
+            avg_latency_ms: 0.0,
+            p95_latency_ms: 0.0,
+            total_cost_usd: 0.0,
+            total_tokens_in: 0,
+            total_tokens_out: 0,
+            model: String::new(),
+        },
+    };
+    Json(snap)
+}
 /// The full AIBOM is built by the `themis-aibom` binary at
 /// build time; the live endpoint serves a snapshot (top-level
 /// metadata + 1-2 evidence properties) so a judge can curl it

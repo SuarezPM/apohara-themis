@@ -116,6 +116,9 @@ fn build_state() -> AppState {
         model_id: "mock-fallback".to_string(),
         band_room: None,
         sponsor_stack: themis_orchestrator::events::SponsorStackInfo::default(),
+        featherless_metrics: None,
+        aiml_metrics: None,
+        band_live: None,
     }
 }
 

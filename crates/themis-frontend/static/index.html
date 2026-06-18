@@ -118,6 +118,29 @@
     </div>
   </header>
 
+  <!-- ───── Section 0.5 · Live Band Room (Story Ola-A) — above the fold so judges see it without scrolling ───── -->
+  <section class="sec band-live-room" aria-labelledby="band-live-h" data-qa="band-live-room">
+    <div class="sec-head">
+      <h2 id="band-live-h">Live Band Room · 6 agents in app.band.ai</h2>
+      <p>Watch the 6 THEMIS agents (extractor, po_matcher, fraud_auditor, gaap_classifier, provenance_signer, demo_narrator) debate a real AP invoice in a public Phoenix Channels chatroom on <b>wss://app.band.ai/api/v1/socket/websocket</b>. <b>Story Ola-A</b> wires each agent as a long-lived WebSocket subprocess; the link below opens the chatroom on a new tab.</p>
+    </div>
+    <div class="band-live-room__panel">
+      <a id="band-live-room-link" class="band-live-room__link" href="https://app.band.ai/rooms/themis-demo" target="_blank" rel="noopener" data-qa="band-live-room-link">
+        <span class="band-live-room__link-dot" aria-hidden="true"></span>
+        <span class="band-live-room__link-text">
+          <span class="band-live-room__link-label">Open live chatroom</span>
+          <span class="band-live-room__link-url" id="band-live-room-url">app.band.ai/rooms/themis-demo</span>
+        </span>
+        <span class="band-live-room__link-meta" id="band-live-room-meta">6 agents · 0 events</span>
+      </a>
+      <div class="band-live-room__metrics" aria-label="Band fleet metrics">
+        <span class="band-live-room__metric"><b id="band-live-ws-events">0</b><span>ws events</span></span>
+        <span class="band-live-room__metric"><b id="band-live-agents">0</b><span>agents connected</span></span>
+        <span class="band-live-room__metric"><b id="band-live-room">—</b><span>room id</span></span>
+      </div>
+    </div>
+  </section>
+
   <!-- ───── Section 1 · Stat-Led: 4 framework cards ───── -->
   <section class="sec frameworks" aria-labelledby="frameworks-h">
     <div class="sec-head">
@@ -214,6 +237,38 @@
         <h3 class="reg-tile__h">DORA Art. 17 incident reporting clock</h3>
         <p class="reg-tile__sub">72h window from BAAAR HALT to competent authority notification</p>
         <p class="reg-tile__v"><span id="reg-dora-v">idle</span></p>
+      </article>
+      <article class="reg-tile" id="reg-aiml" data-state="idle" data-qa="reg-aiml">
+        <h3 class="reg-tile__h">AI/ML API <span class="reg-tile__chip">live</span></h3>
+        <p class="reg-tile__sub">Fable 5 calls · 50/50 e2e proof · polled every 2s</p>
+        <p class="reg-tile__v">
+          <span class="reg-aiml-grid">
+            <span><b id="reg-aiml-calls">0</b><i>calls</i></span>
+            <span><b id="reg-aiml-ok">0</b><i>success</i></span>
+            <span><b id="reg-aiml-p95">—</b><i>p95 ms</i></span>
+            <span><b id="reg-aiml-cost">$0.00</b><i>USD</i></span>
+          </span>
+        </p>
+        <p class="reg-tile__model" id="reg-aiml-model">model: —</p>
+      </article>
+      <!-- Story Ola-C: Featherless AI live-call counters.
+           Sibling of the AI/ML API widget above; same shape
+           so the dashboard renders the two providers with one
+           template. fraud_auditor is the only agent routed to
+           Featherless; the counters here are the fraud_auditor
+           call surface. -->
+      <article class="reg-tile" id="reg-featherless" data-state="idle" data-qa="reg-featherless">
+        <h3 class="reg-tile__h">Featherless AI <span class="reg-tile__chip">live</span></h3>
+        <p class="reg-tile__sub">Qwen3-Coder-30B calls · fraud_auditor route · polled every 2s</p>
+        <p class="reg-tile__v">
+          <span class="reg-aiml-grid">
+            <span><b id="reg-featherless-calls">0</b><i>calls</i></span>
+            <span><b id="reg-featherless-ok">0</b><i>success</i></span>
+            <span><b id="reg-featherless-p95">—</b><i>p95 ms</i></span>
+            <span><b id="reg-featherless-cost">$0.00</b><i>USD</i></span>
+          </span>
+        </p>
+        <p class="reg-tile__model" id="reg-featherless-model">model: —</p>
       </article>
       <article class="reg-tile" id="reg-eu" data-state="idle">
         <h3 class="reg-tile__h">EU AI Act Art. 12 fields populated</h3>
