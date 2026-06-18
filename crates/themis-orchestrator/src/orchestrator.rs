@@ -667,7 +667,9 @@ mod tests {
         }
     }
 
-    /// Test agent that returns Halt from the Fraud Auditor.
+    /// Test agent that returns Halt from the Fraud Auditor. Used
+    /// by `baaar_halt_short_circuits_the_run` (a single-iteration
+    /// smoke test for the orchestrator's halt path).
     struct HaltingFraudAuditor;
 
     #[async_trait::async_trait]
@@ -697,6 +699,38 @@ mod tests {
                 payload: output,
             })
         }
+    }
+
+    /// Test LLM that ALWAYS returns the same high-risk FraudAssessment
+    /// JSON regardless of the invoice payload it receives. Used by the
+    /// `ac4_baaar_10_of_10_deterministic` test to drive the real
+    /// `FraudAuditor` agent through the actual `LlmBackend::complete`
+    /// path (not a stubbed `Agent`). This proves that **given** a
+    /// constant LLM verdict, the BAAAR gate is deterministic over
+    /// varied invoice inputs — i.e. it does NOT depend on the
+    /// input shape to make its decision.
+    fn halting_llm_provider() -> themis_agents::llm::MockLlmProvider {
+        use themis_agents::llm::{FinishReason, LlmResponse, MockLlmProvider};
+        let body = serde_json::json!({
+            "risk_score": 0.95,
+            "findings": [],
+            "coherence_score": 0.7,
+            "debate_rounds": 1,
+            "explicit_halt": false
+        })
+        .to_string();
+        let resp = LlmResponse {
+            text: body,
+            input_tokens: 100,
+            output_tokens: 100,
+            model_id: "mock-baar-deterministic".to_string(),
+            finish_reason: FinishReason::Stop,
+        };
+        // Match any "Assess this" prompt — the agent's user_prompt is
+        // "Assess this invoice (tenant=...)" so "Assess this" is the
+        // common substring across all 10 iterations.
+        MockLlmProvider::new("mock-baar-deterministic")
+            .with_response("Assess this", resp)
     }
 
     fn good_decision(tenant: &str, dt: DecisionType) -> AgentDecision {
@@ -852,10 +886,38 @@ mod tests {
 
     #[tokio::test]
     async fn ac4_baaar_10_of_10_deterministic() {
+        // AC4: BAAAR HALT fires deterministically across varied
+        // invoice inputs.
+        //
+        // Proves that the GATE is deterministic over varied LLM
+        // inputs, NOT that the LLM is deterministic. The
+        // `halting_llm_provider` returns the same halt-triggering
+        // FraudAssessment every call (risk_score=0.95, well above
+        // the 0.85 threshold). The variation comes from the 10
+        // different synthetic invoice payloads we feed through the
+        // orchestrator — different vendor names + amounts and
+        // different invoice IDs — which exercises the real
+        // `FraudAuditor::process()` path through `LlmBackend::complete`.
+        // If the gate ever failed to halt, it would be because the
+        // GATE mis-evaluated a halt-triggering assessment, not
+        // because the LLM was non-deterministic.
         let rooms: Arc<dyn BandRoom> = MockBandRoom::new().into_arc();
         let tenants = Arc::new(TenantRegistry::with_default_tenants());
         let mut halt_count = 0;
-        for i in 0..10 {
+        // 10 synthetic invoices — varied vendor + amount + id.
+        let synthetic_invoices: Vec<(&str, Vec<u8>)> = vec![
+            ("inv-001-aurora", b"vendor=Acme Corp; amount=1234.56; line=widget".to_vec()),
+            ("inv-002-bedrock", b"vendor=Globex; amount=99999.00; line=consulting".to_vec()),
+            ("inv-003-cyberdyne", b"vendor=Initech; amount=42.00; line=paper".to_vec()),
+            ("inv-004-dunder", b"vendor=Pied Piper; amount=7500.50; line=compression".to_vec()),
+            ("inv-005-ecorp", b"vendor=Stark Ind; amount=100000.00; line=arc_reactor".to_vec()),
+            ("inv-006-fsociety", b"vendor=Evil Corp; amount=1.00; line=tape".to_vec()),
+            ("inv-007-gringotts", b"vendor=Ollivanders; amount=17.99; line=wand".to_vec()),
+            ("inv-008-hooli", b"vendor=Hooli; amount=5000000.00; line=datacenter".to_vec()),
+            ("inv-009-umbrella", b"vendor=Umbrella Corp; amount=666.66; line=pharma".to_vec()),
+            ("inv-010-vehement", b"vendor=Wayne Enterprises; amount=31415.92; line=batmobile".to_vec()),
+        ];
+        for (invoice_id, raw_payload) in &synthetic_invoices {
             let mut agents: HashMap<String, Arc<dyn Agent>> = HashMap::new();
             agents.insert(
                 "extractor".to_string(),
@@ -871,7 +933,14 @@ mod tests {
                     response: good_decision("stark", DecisionType::PoMatched),
                 }),
             );
-            agents.insert("fraud_auditor".to_string(), Arc::new(HaltingFraudAuditor));
+            // Real FraudAuditor driven by the deterministic
+            // halting LLM — same LLM across all 10 iterations;
+            // input varies in (invoice_id, raw_payload).
+            let llm = Arc::new(halting_llm_provider());
+            agents.insert(
+                "fraud_auditor".to_string(),
+                Arc::new(themis_agents::fraud_auditor::FraudAuditor::new(llm)),
+            );
             for name in [
                 "gaap_classifier",
                 "provenance_signer",
@@ -906,7 +975,7 @@ mod tests {
             }
             let orch = Orchestrator::new(rooms.clone(), agents, tenants.clone());
             let sp = orch
-                .process_invoice("stark", &format!("inv-{i:03}"), b"raw".to_vec())
+                .process_invoice("stark", invoice_id, raw_payload.clone())
                 .await
                 .unwrap();
             if matches!(
