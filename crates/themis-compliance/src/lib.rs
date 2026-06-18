@@ -8,6 +8,7 @@
 pub mod dora;
 pub mod eu_ai_act;
 pub mod framework;
+pub mod inv15;
 pub mod iso_42001;
 pub mod nist_ai_rmf;
 pub mod owasp_agentic;
