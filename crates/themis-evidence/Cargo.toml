@@ -44,6 +44,10 @@ sha2 = "0.10"
 # `native` in the upstream crate. The `native` build needs
 # rust-version >= 1.88 (bumped in workspace root).
 apohara-sealchain-core = { path = "/home/thelinconx/apohara-sealchain/crates/apohara-sealchain-core" }
+# SaaS multi-tenant key derivation (FIX-6): HKDF-SHA256 derives a
+# deterministic 32-byte Ed25519 seed from MASTER_SEED + tenant_id.
+# `hkdf` 0.12 is paired with `sha2` 0.10 (already a workspace dep).
+hkdf = "0.12"
 # Rekor v2 gRPC stack (ADR 0010). Pinned to 0.14 for tonic/prost to
 # match the current stable on crates.io as of 2026-06-17. The
 # `transport` feature pulls in HTTP/2 connector + TLS roots;

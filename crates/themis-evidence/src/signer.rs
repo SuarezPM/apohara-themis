@@ -14,6 +14,9 @@
 //!   and embedded in the binary. **This is the deployment path**
 //!   (R4 + R8 mitigation: Vercel's ephemeral FS cannot persist
 //!   generated keys across deploys; baked keys survive that).
+//!   For SaaS mode (any other tenant id), the seed is derived
+//!   deterministically via HKDF-SHA256 from a baked master seed
+//!   and the tenant id (see FIX-6).
 
 use std::path::Path;
 
@@ -29,6 +32,26 @@ pub static STARK_SEED: [u8; 32] = *include_bytes!("../keys/stark.ed25519");
 /// Wayne's baked-in Ed25519 seed (32 bytes, hex sha256 of
 /// `themis-wayne-tenant-baked-seed-v1`).
 pub static WAYNE_SEED: [u8; 32] = *include_bytes!("../keys/wayne.ed25519");
+
+/// SaaS multi-tenant master seed (FIX-6).
+///
+/// Baked at compile time. Never written to disk, never logged,
+/// never serialised. Used as the IKM for HKDF-SHA256 derivation
+/// of per-tenant seeds. 32 bytes is exactly the Ed25519 seed
+/// length, so the HKDF output maps 1:1 to an Ed25519 signing key.
+///
+/// Distinct from `STARK_SEED` / `WAYNE_SEED` so that fixture
+/// tenants cannot collide with SaaS-derived keys by accident.
+const MASTER_SEED: [u8; 32] = [
+    0x54, 0x68, 0x65, 0x6d, 0x69, 0x73, 0x2d, 0x6d, // "Themis-m"
+    0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x73, 0x65, // "aster-se"
+    0x65, 0x64, 0x2d, 0x76, 0x31, 0x2d, 0x6e, 0x6f, // "ed-v1-no"
+    0x6e, 0x63, 0x65, 0x2d, 0x66, 0x69, 0x78, 0x21, // "nce-fix!"
+];
+
+/// HKDF-SHA256 salt for SaaS tenant derivation. Bumped as `v1`;
+/// change the suffix if the derivation protocol is ever rotated.
+const HKDF_SALT: &[u8] = b"themis-tenant-v1";
 
 /// An Ed25519 keypair (signing + verifying).
 #[derive(Debug, Clone)]
@@ -73,6 +96,9 @@ pub enum SignerError {
     #[error("invalid key length: expected 32, got {0}")]
     InvalidKeyLength(usize),
     /// `for_tenant` was called with an id that has no baked key.
+    /// Retained for callers that explicitly want to reject unknown
+    /// ids (e.g. when enforcing an allow-list); not raised by
+    /// `for_tenant` itself after FIX-6 (SaaS mode accepts any id).
     #[error("no baked key for tenant: {0} (use `from_seed` or `new` instead)")]
     UnknownTenant(String),
 }
@@ -158,21 +184,51 @@ impl SignerService {
     }
 
     /// Build a `SignerService` from a compile-time baked seed for
-    /// the two fixture tenants (`stark`, `wayne`). The seeds live
-    /// in `keys/{tenant}.ed25519` and are embedded via
-    /// `include_bytes!`. Returns `SignerError::UnknownTenant` for
-    /// any other tenant id (callers must use `from_seed` or `new`
-    /// for non-baked tenants).
+    /// the two fixture tenants (`stark`, `wayne`), or via
+    /// HKDF-SHA256 derivation from a baked master seed for any
+    /// other tenant id (SaaS multi-tenant mode, FIX-6).
+    ///
+    /// - `stark` and `wayne` use seeds committed to
+    ///   `keys/{tenant}.ed25519` and embedded via `include_bytes!`.
+    /// - Any other id is treated as a SaaS tenant: a 32-byte
+    ///   Ed25519 seed is derived via HKDF-SHA256(salt=`"themis-tenant-v1"`,
+    ///   ikm=`MASTER_SEED`, info=tenant_id). The derivation is
+    ///   deterministic, so the same tenant id always produces the
+    ///   same keypair (no key churn across deploys). Distinct
+    ///   tenants get cryptographically isolated keys (the
+    ///   HKDF output space is the full 256-bit Ed25519 seed space).
+    ///
+    /// Note: this never returns `SignerError::UnknownTenant` now —
+    /// any string is a valid SaaS tenant id. The variant is kept
+    /// for callers that explicitly want to reject unknown ids (use
+    /// `from_seed` or `new` for that path).
     pub fn for_tenant(tenant_id: &str) -> Result<Self, SignerError> {
         let seed: [u8; 32] = match tenant_id {
             "stark" => STARK_SEED,
             "wayne" => WAYNE_SEED,
-            other => {
-                return Err(SignerError::UnknownTenant(other.to_string()));
-            }
+            other => derive_saas_seed(other),
         };
         Ok(Self::from_seed(tenant_id, seed))
     }
+}
+
+/// Derive a deterministic 32-byte Ed25519 seed for a SaaS tenant
+/// id via HKDF-SHA256(salt=HKDF_SALT, ikm=MASTER_SEED, info=tenant_id).
+///
+/// The 32-byte output is exactly the Ed25519 seed length, so the
+/// caller can pass it straight to `KeyPair::from_bytes`. Distinct
+/// tenants get distinct keys (HKDF output space = 256 bits), and
+/// the same tenant id always derives the same seed (deterministic,
+/// no key churn across deploys).
+fn derive_saas_seed(tenant_id: &str) -> [u8; 32] {
+    let hk = hkdf::Hkdf::<sha2::Sha256>::new(Some(HKDF_SALT), &MASTER_SEED);
+    let mut seed = [0u8; 32];
+    // expand() with a 32-byte L (within HKDF-SHA256's 255 *
+    // HashLen = 8160-byte limit) is infallible — the only error
+    // case is L > 8160, which cannot happen for a 32-byte output.
+    hk.expand(tenant_id.as_bytes(), &mut seed)
+        .expect("HKDF-SHA256 expand with 32-byte output cannot fail");
+    seed
 }
 
 #[cfg(test)]
@@ -271,9 +327,61 @@ mod tests {
     }
 
     #[test]
-    fn for_tenant_rejects_unknown_tenant() {
-        let err = SignerService::for_tenant("lexcorp").unwrap_err();
-        assert!(matches!(err, SignerError::UnknownTenant(t) if t == "lexcorp"));
+    fn for_tenant_accepts_saas_tenant_via_hkdf() {
+        // FIX-6: any non-fixture tenant id is now accepted via
+        // HKDF-SHA256 derivation (SaaS mode). Previously this
+        // returned `SignerError::UnknownTenant`.
+        let lexcorp = SignerService::for_tenant("lexcorp").unwrap();
+        assert_eq!(lexcorp.tenant_id(), "lexcorp");
+        // 64-char hex public key = a valid Ed25519 verifying key.
+        assert_eq!(lexcorp.public_key_hex().len(), 64);
+    }
+
+    #[test]
+    fn for_tenant_saas_key_differs_from_fixtures() {
+        // A SaaS-derived key must NOT collide with stark or wayne.
+        let stark = SignerService::for_tenant("stark").unwrap();
+        let wayne = SignerService::for_tenant("wayne").unwrap();
+        let acme = SignerService::for_tenant("acme_corp").unwrap();
+        assert_ne!(acme.public_key_hex(), stark.public_key_hex());
+        assert_ne!(acme.public_key_hex(), wayne.public_key_hex());
+    }
+
+    #[test]
+    fn for_tenant_saas_is_deterministic() {
+        // Same tenant id → same key (HKDF is a pure function).
+        let s1 = SignerService::for_tenant("acme_corp").unwrap();
+        let s2 = SignerService::for_tenant("acme_corp").unwrap();
+        assert_eq!(s1.public_key_hex(), s2.public_key_hex());
+        // Deterministic Ed25519 ⇒ same signature for same message.
+        let msg = b"saas deterministic test";
+        assert_eq!(s1.sign_hex(msg), s2.sign_hex(msg));
+    }
+
+    #[test]
+    fn for_tenant_distinct_saas_tenants_get_distinct_keys() {
+        // Two SaaS tenants must derive different keys (collision
+        // resistance of HKDF-SHA256 in the 256-bit output space).
+        let a = SignerService::for_tenant("acme_corp").unwrap();
+        let b = SignerService::for_tenant("initech").unwrap();
+        assert_ne!(a.public_key_hex(), b.public_key_hex());
+    }
+
+    #[test]
+    fn for_tenant_saas_roundtrip_sign_verify() {
+        // Sanity: HKDF-derived key is a valid Ed25519 signing key.
+        let s = SignerService::for_tenant("acme_corp").unwrap();
+        let msg = b"hkdf roundtrip";
+        let sig = s.sign(msg);
+        assert!(s.verify(msg, &sig));
+        assert!(!s.verify(b"tampered", &sig));
+    }
+
+    #[test]
+    fn derive_saas_seed_is_32_bytes() {
+        // The HKDF output must be exactly 32 bytes for Ed25519.
+        let seed = derive_saas_seed("anything");
+        assert_eq!(seed.len(), 32);
     }
 
     #[test]
