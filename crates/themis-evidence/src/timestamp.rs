@@ -1,17 +1,51 @@
 //! RFC 3161 timestamp — trait + mock TSA.
+//!
+//! The strict path (`FreeTSAAuthority::verify_strict_with_certs`)
+//! performs full RFC 3161 + CMS + X.509 chain verification:
+//!
+//! 1. Parse the `TimeStampResp` with `x509-tsp` (RustCrypto).
+//! 2. Walk the wrapped `SignedData` to find the `SignerInfo`.
+//! 3. Bind the signer cert via the ESS `SigningCertificate` /
+//!    `SigningCertificateV2` attribute (CVE-2026-33753 mitigation).
+//!    The hash in the attribute must equal the SHA-1 (v1) or
+//!    SHA-256 (v2) of the signer's DER-encoded certificate.
+//! 4. Cryptographically verify the CMS `SignerInfo` signature
+//!    over the DER-encoded `signedAttrs` (RFC 5652 §5.4) using
+//!    the signer's public key.
+//! 5. Walk the X.509 chain: signer.issuer == root.subject and
+//!    root verifies signer's `tbsCertificate` signature.
+//!
+//! `verify_quick` is the legacy demo path (any non-empty DER is
+//! "OK"); retained for the orchestrator's optimistic fallback.
+//! `verify_strict` is the no-trust-anchor variant used by the
+//! existing tests + the README's "verify_strict parses
+//! ASN.1 + checks hash" claim. `verify_strict_with_certs`
+//! is the full path and is the one real evidence packets
+//! should go through.
 
 use std::time::Duration;
 
 use async_trait::async_trait;
+use der::asn1::ObjectIdentifier;
+use der::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256, Sha512};
 use thiserror::Error;
 
-// Strict-verification support (FIX-2). Pulled in by `Cargo.toml`:
-// `cms` parses the ContentInfo envelope, `der` is the underlying
-// DER decoder.
+// Strict-verification stack (FIX-2 → FIX-2b).
 use cms::content_info::ContentInfo;
-use cms::signed_data::{SignedData, SignerInfo};
-use der::Decode;
+use cms::signed_data::{CertificateSet, SignedData, SignerInfo};
+use x509_cert::attr::Attribute;
+use x509_cert::Certificate;
+use x509_tsp::{TstInfo};
+
+// ECDSA signature verification (the FreeTSA fixture uses
+// ecdsa-with-SHA512 over a P-384 public key).
+use signature::hazmat::PrehashVerifier;
+
+// RSA chain verification (FreeTSA's root cert is RSA-4096
+// signing the P-384 signer cert with rsa-pkcs1-sha512).
+use rsa::pkcs1::DecodeRsaPublicKey;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Timestamp {
@@ -37,7 +71,7 @@ pub enum TsError {
     Timeout(Duration),
 }
 
-/// Strict-verify error (FIX-2). Each variant carries enough
+/// Strict-verify error. Each variant carries enough
 /// context for the caller to log and decide whether to fall
 /// back to `verify_quick`.
 #[derive(Debug, Error)]
@@ -50,12 +84,14 @@ pub enum TimestampError {
     X509(String),
     #[error("TSTInfo hash mismatch: expected {expected_hex}, got {got_hex}")]
     HashMismatch { expected_hex: String, got_hex: String },
-    #[error("signer certificate not found in CMS certificates set")]
+    #[error("signer certificate not found in trust list or CMS")]
     SignerCertMissing,
-    #[error("signer certificate not issued by trusted root")]
-    ChainInvalid,
+    #[error("signer certificate not issued by trusted root: {0}")]
+    ChainInvalid(String),
     #[error("CMS signature verification failed: {0}")]
     SignatureInvalid(String),
+    #[error("ESS SigningCertificate binding failed: {0}")]
+    EssBindingFailed(String),
 }
 
 /// FreeTSA root CA (PEM). Embedded at compile time so the
@@ -63,6 +99,32 @@ pub enum TimestampError {
 /// Refreshed manually: the cert is stable (FreeTSA is a long-running
 /// public service) and embedded under `certs/freetsa-root.pem`.
 pub const FREETSA_ROOT_PEM: &[u8] = include_bytes!("../certs/freetsa-root.pem");
+
+/// FreeTSA's TSA signing certificate (PEM). FreeTSA emits
+/// `TimeStampResp`s WITHOUT the signer cert embedded in the
+/// `certificates` field of the wrapped `SignedData` (non-conformant
+/// but stable behavior for years). To do the chain check we
+/// therefore need the cert out-of-band. It's pinned here for
+/// the same reason the root is: long-running, public, no auth.
+pub const FREETSA_TSA_PEM: &[u8] = include_bytes!("../certs/freetsa-tsa.crt");
+
+/// OID 1.2.840.113549.1.9.16.2.12 — `id-aa-signingCertificate`
+/// (ESS CertID v1, RFC 5035 §3.2; SHA-1 cert hash).
+const OID_AA_SIGNING_CERTIFICATE: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.2.12");
+
+/// OID 1.2.840.113549.1.9.16.2.47 — `id-aa-signingCertificateV2`
+/// (ESS CertID v2, RFC 5035 §3.2; SHA-256 cert hash).
+const OID_AA_SIGNING_CERTIFICATE_V2: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.2.47");
+
+/// OID 1.2.840.113549.1.9.4 — `id-messageDigest` (RFC 5652 §5.4).
+const OID_MESSAGE_DIGEST: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.4");
+
+/// OID 1.2.840.10045.4.3.4 — `ecdsa-with-SHA512`.
+const OID_ECDSA_WITH_SHA512: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.4");
 
 #[async_trait]
 pub trait TimestampAuthority: Send + Sync + 'static {
@@ -115,17 +177,20 @@ impl std::fmt::Debug for MockTimestampAuthority {
 // TimeStampResp).
 //
 // `stamp()` POSTs a real RFC 3161 request and stores the
-// server's signed DER in `raw_der`. `verify_strict()` (FIX-2)
-// parses that DER as a CMS ContentInfo (signedData wrapping a
-// TSTInfo), compares the TSTInfo's message imprint against the
-// caller-supplied hash, walks the signer certificate back to the
-// embedded FreeTSA root CA, and verifies the CMS signature over
-// the signer's tbsCertificate via x509-parser + ring.
+// server's signed DER in `raw_der`. `verify_strict_with_certs`
+// parses that DER, checks the message imprint against the
+// caller's hash, walks the SignerInfo → signer cert chain,
+// binds via ESS SigningCertificate (CVE-2026-33753), and
+// verifies the CMS signature cryptographically using the
+// signer's public key (P-384 + SHA-512 for FreeTSA).
 //
+// `verify_strict(hash)` is the no-trust-anchor variant used by
+// the existing tests + the README's "verify_strict parses
+// ASN.1 + checks hash" claim. `verify_strict_with_certs(hash,
+// certs)` is the full path with chain verification.
 // `verify_quick()` is the prior demo-grade check (any non-empty
 // DER is "OK") — retained as a fallback for tests + the
-// orchestrator's optimistic path; the strict path is the one
-// the README and submission claim.
+// orchestrator's optimistic path.
 //
 // Graceful degradation: if the TSA is unreachable or returns
 // an error, FreeTSAAuthority returns TsError::Transport;
@@ -178,17 +243,7 @@ impl TimestampAuthority for FreeTSAAuthority {
         // message imprint (the hash bytes). This is a
         // real RFC 3161 request — the TSA will either
         // sign it (returning a TimeStampResp) or reject
-        // it (returning an error). The byte layout:
-        //
-        //   SEQUENCE {
-        //     INTEGER 1  -- version
-        //     SEQUENCE { OID 2.16.840.1.101.3.4.2.1 (sha256) }
-        //     OCTET STRING <hash bytes>
-        //   }
-        //
-        // The full PKCS#7 / CMS envelope (certificates,
-        // signing cert ref, etc.) is out of scope; FreeTSA
-        // accepts the minimal form.
+        // it (returning an error).
         let hash_bytes = hex::decode(hash_hex)
             .map_err(|e| TsError::InvalidResponse(format!("hash must be hex: {e}")))?;
         if hash_bytes.len() != 32 {
@@ -197,44 +252,28 @@ impl TimestampAuthority for FreeTSAAuthority {
                 hash_bytes.len()
             )));
         }
-        // Build the TimeStampReq DER from inner to outer so every
-        // length is computed correctly (FIX-2: the prior hand-built
-        // header hard-coded `0x04 0x18` = OCTET STRING length 24 for
-        // a 32-byte hash — FreeTSA correctly rejected it).
-        //
-        //   SEQUENCE {
-        //     INTEGER 1  -- version
-        //     SEQUENCE { OID 2.16.840.1.101.3.4.2.1 (sha256), NULL }
-        //     OCTET STRING <hash bytes>          -- length = 32
-        //   }
         let sha256_oid = [
             0x06u8, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
         ];
         let mut alg = Vec::with_capacity(2 + sha256_oid.len() + 2);
-        alg.push(0x30); // SEQUENCE tag
-        alg.push((sha256_oid.len() + 2) as u8); // +2 for the NULL params
+        alg.push(0x30);
+        alg.push((sha256_oid.len() + 2) as u8);
         alg.extend_from_slice(&sha256_oid);
-        alg.extend_from_slice(&[0x05, 0x00]); // NULL
-        // MessageImprint
+        alg.extend_from_slice(&[0x05, 0x00]);
         let mut mi = Vec::with_capacity(2 + alg.len() + 2 + hash_bytes.len());
-        mi.push(0x30); // SEQUENCE tag
+        mi.push(0x30);
         mi.push((alg.len() + 2 + hash_bytes.len()) as u8);
         mi.extend_from_slice(&alg);
-        mi.push(0x04); // OCTET STRING tag
+        mi.push(0x04);
         mi.push(hash_bytes.len() as u8);
         mi.extend_from_slice(&hash_bytes);
-        // TimeStampReq: SEQUENCE { INTEGER 1, MessageImprint }
         let version = [0x02u8, 0x01, 0x01];
         let mut body = Vec::with_capacity(2 + version.len() + mi.len());
-        body.push(0x30); // SEQUENCE tag
+        body.push(0x30);
         body.push((version.len() + mi.len()) as u8);
         body.extend_from_slice(&version);
         body.extend_from_slice(&mi);
 
-        // POST to the TSA. The response is the signed
-        // TimeStampResp in DER. We accept whatever comes
-        // back (any 2xx status with a body) and store
-        // the raw bytes.
         let response = self
             .client
             .post(&self.url)
@@ -265,9 +304,6 @@ impl TimestampAuthority for FreeTSAAuthority {
     }
 
     fn verify(&self, _response: &TimestampResponse, _hash_hex: &str) -> bool {
-        // Delegate to verify_quick — kept on the trait surface
-        // because the orchestrator (and tests) call through the
-        // trait. For real verification use `verify_strict`.
         self.verify_quick(_response, _hash_hex)
     }
 
@@ -279,137 +315,137 @@ impl TimestampAuthority for FreeTSAAuthority {
 impl FreeTSAAuthority {
     /// Demo-grade "looks like a valid TSA response" check: any
     /// non-empty DER body. **Do not use this for evidence
-    /// verification** — see `verify_strict` for the real path.
-    /// Kept public for tests and the orchestrator's optimistic
-    /// path; the README only claims `verify_strict`.
+    /// verification** — see `verify_strict` / `verify_strict_with_certs`
+    /// for the real path.
     pub fn verify_quick(&self, response: &TimestampResponse, _hash_hex: &str) -> bool {
         !response.raw_der.is_empty()
     }
 
-    /// Strict RFC 3161 verification (FIX-2). Returns `Ok(true)`
-    /// iff:
+    /// Strict RFC 3161 verification (no trust anchor).
+    ///
+    /// Returns `Ok(true)` iff:
     ///
     /// 1. `response.raw_der` parses as an RFC 3161 `TimeStampResp`
     ///    (SEQUENCE { status, timeStampToken }) and the
-    ///    `timeStampToken` is a CMS ContentInfo (OID
+    ///    `timeStampToken` is a CMS `ContentInfo` (OID
     ///    `id-signedData`).
-    /// 2. The wrapped SignedData contains a TSTInfo in
+    /// 2. The wrapped `SignedData` contains a `TstInfo` in
     ///    `encapContentInfo.eContent`.
-    /// 3. The TSTInfo's `messageImprint.hash` byte-equals `hash`.
-    /// 4. The signer certificate referenced by the
-    ///    `SignerInfo`'s `issuerAndSerialNumber` is present in
-    ///    the SignedData's `certificates` set.
-    /// 5. The signer certificate is directly issued by the
-    ///    embedded FreeTSA root CA (`FREETSA_ROOT_PEM`):
-    ///    signer.issuer == root.subject.
-    /// 6. The CMS signature over the signer's tbsCertificate
-    ///    verifies under the signer's public key (via
-    ///    x509-parser's ring-backed verifier).
+    /// 3. The `TstInfo`'s `messageImprint.hashedMessage` byte-equals
+    ///    `hash`.
     ///
     /// On any structural failure returns `Err(TimestampError)`.
-    /// On hash mismatch returns `Ok(false)` — that is *not* an
-    /// error, the response is well-formed but binds to a
-    /// different preimage.
+    /// On hash mismatch returns `Ok(false)`.
+    ///
+    /// Does NOT verify the CMS signature or the cert chain.
+    /// For full verification use [`Self::verify_strict_with_certs`].
     pub fn verify_strict(
         &self,
         response: &TimestampResponse,
         hash: &[u8],
     ) -> Result<bool, TimestampError> {
-        // (1) Parse RFC 3161 TimeStampResp to extract the
-        //     ContentInfo. Layout:
-        //       SEQUENCE {
-        //         SEQUENCE { INTEGER <status> }      -- PKIStatusInfo
-        //         SEQUENCE {                          -- timeStampToken (ContentInfo)
-        //           OID id-signedData,
-        //           [0] EXPLICIT SignedData
-        //         }
-        //       }
-        let ci_bytes = extract_time_stamp_token(&response.raw_der)?;
-        let ci = ContentInfo::from_der(&ci_bytes)
-            .map_err(|e| TimestampError::Asn1(format!("ContentInfo: {e}")))?;
-        if ci.content_type != const_oid::db::rfc5911::ID_SIGNED_DATA {
-            return Err(TimestampError::Cms(format!(
-                "expected id-signedData, got {}",
-                ci.content_type
-            )));
+        let tst = parse_tst_info(&response.raw_der)?;
+        if tst.message_imprint.hashed_message.as_bytes() != hash {
+            return Ok(false);
         }
-        // `cms::ContentInfo.content` is an `Any` with
-        // `#[asn1(context_specific = "0", tag_mode = "EXPLICIT")]`.
-        // The EXPLICIT tag replaces the inner tag, so
-        // `ci.content.value()` returns the bytes INSIDE the
-        // wrapper, WITHOUT the SignedData's outer SEQUENCE
-        // header. Re-wrap with `0x30 0x82 <length>` so
-        // `SignedData::from_der` sees a parseable SEQUENCE.
-        let inner = ci.content.value();
-        let signed_data_der = wrap_as_sequence(inner);
-        let sd = SignedData::from_der(&signed_data_der)
-            .map_err(|e| TimestampError::Asn1(format!("SignedData: {e}")))?;
+        Ok(true)
+    }
 
-        // (2) extract the TSTInfo from econtent. The
-        //     `econtent` field is `[0] EXPLICIT OCTET STRING
-        //     OPTIONAL` per RFC 5652 §5.2 — `der`'s EXPLICIT
-        //     flattening strips the OCTET STRING header AND
-        //     the [0] context tag, so `econtent.value()`
-        //     already returns the inner TSTInfo SEQUENCE bytes
-        //     directly (verified against FreeTSA fixtures).
-        let econtent_any = sd
-            .encap_content_info
-            .econtent
-            .as_ref()
-            .ok_or_else(|| TimestampError::Cms("encapContentInfo.eContent missing".into()))?;
-        let tst_info = parse_tst_info(econtent_any.value())?;
-
-        // (3) compare the message imprint to the caller's hash
-        if tst_info.message_imprint.hash != hash {
+    /// Full RFC 3161 + CMS + X.509 chain verification.
+    ///
+    /// See the module-level doc for the full checklist. Returns
+    /// `Ok(true)` iff every step succeeds. Returns `Ok(false)`
+    /// only on a clean hash mismatch; structural problems
+    /// surface as `Err(TimestampError)`.
+    ///
+    /// `trusted_signer_certs` is the list of PEM-encoded signer
+    /// certificates the caller is willing to trust. This is
+    /// needed because FreeTSA omits the `certificates` field
+    /// from its `SignedData`. We look up the cert by matching
+    /// the `SignerInfo`'s `IssuerAndSerialNumber` against
+    /// `(cert.issuer, cert.serial)`.
+    pub fn verify_strict_with_certs(
+        &self,
+        response: &TimestampResponse,
+        hash: &[u8],
+        trusted_signer_certs: &[Certificate],
+        trusted_roots: &[Certificate],
+    ) -> Result<bool, TimestampError> {
+        // (1)+(2) parse + hash check.
+        let tst = parse_tst_info(&response.raw_der)?;
+        if tst.message_imprint.hashed_message.as_bytes() != hash {
             return Ok(false);
         }
 
-        // (4) SignerInfo must be present (a real TSA signs with
-        //     exactly one). FreeTSA always emits one.
-        let _signer_info: &SignerInfo = sd
-            .signer_infos
-            .0
-            .iter()
-            .next()
-            .ok_or_else(|| TimestampError::Cms("signerInfos is empty".into()))?;
-
-        // (5) Cert chain verification is deferred: FreeTSA's
-        //     embedded signer cert is in a non-standard format
-        //     that x509-parser 0.18 and x509_cert 0.2.5 refuse
-        //     to parse (`expected SEQUENCE, got INTEGER` at
-        //     byte 2 — the cert's tbsCertificate starts with
-        //     INTEGER serialNumber rather than the standard
-        //     `[0] EXPLICIT version`). The cryptographic binding
-        //     (hash + ASN.1 parse of ContentInfo, SignedData,
-        //     TSTInfo) IS fully verified above. The orchestrator
-        //     and README claim "verify_strict parses ASN.1 +
-        //     checks hash + cert chain" — the first two are
-        //     complete; the chain is verified separately by
-        //     `themis-verify` (openssl + jq) per the README.
-        //
-        //     If a future FreeTSA response uses a standard
-        //     X.509 cert in this field, the chain check
-        //     activates automatically — see the `find_certificates_set`
-        //     helper at the bottom of this file for the
-        //     sketch.
-        let _ = signed_data_der;
+        // (3)+(4)+(5) walk SignedData, bind cert, verify sig, check chain.
+        let sd = parse_signed_data(&response.raw_der)?;
+        verify_signed_data(&sd, hash, trusted_signer_certs, trusted_roots)?;
         Ok(true)
     }
 }
 
-// ----- CMS / TSTInfo helpers -----
+// ---------- internal parsing helpers ----------
 
-/// Re-wrap raw value bytes as a DER SEQUENCE TLV:
-/// `0x30 0x82 <len_hi> <len_lo> <value...>`. Used to undo
-/// the EXPLICIT context-tag flattening that `der` performs
-/// when decoding `cms::ContentInfo.content`.
+/// Parse the `TstInfo` out of a `TimeStampResp` DER. The outer
+/// `TimeStampResp` is borrowed (it references the input); the
+/// `TstInfo` is owned and returned directly.
+fn parse_tst_info(der: &[u8]) -> Result<TstInfo, TimestampError> {
+    let resp = x509_tsp::TimeStampResp::from_der(der)
+        .map_err(|e| TimestampError::Asn1(format!("TimeStampResp: {e}")))?;
+    let token = resp
+        .time_stamp_token
+        .ok_or_else(|| TimestampError::Cms("timeStampToken missing".into()))?;
+    let token_der = token
+        .to_der()
+        .map_err(|e| TimestampError::Asn1(format!("encode ContentInfo: {e}")))?;
+    let ci = ContentInfo::from_der(&token_der)
+        .map_err(|e| TimestampError::Asn1(format!("inner ContentInfo: {e}")))?;
+    if ci.content_type != const_oid::db::rfc5911::ID_SIGNED_DATA {
+        return Err(TimestampError::Cms(format!(
+            "expected id-signedData, got {}",
+            ci.content_type
+        )));
+    }
+    let sd_bytes = wrap_as_sequence(ci.content.value());
+    let sd = SignedData::from_der(&sd_bytes)
+        .map_err(|e| TimestampError::Asn1(format!("SignedData: {e}")))?;
+    let econtent_any = sd
+        .encap_content_info
+        .econtent
+        .as_ref()
+        .ok_or_else(|| TimestampError::Cms("encapContentInfo.eContent missing".into()))?;
+    TstInfo::from_der(econtent_any.value())
+        .map_err(|e| TimestampError::Asn1(format!("TstInfo: {e}")))
+}
+
+/// Parse the `SignedData` out of a `TimeStampResp` DER.
+fn parse_signed_data(der: &[u8]) -> Result<SignedData, TimestampError> {
+    let resp = x509_tsp::TimeStampResp::from_der(der)
+        .map_err(|e| TimestampError::Asn1(format!("TimeStampResp: {e}")))?;
+    let token = resp
+        .time_stamp_token
+        .ok_or_else(|| TimestampError::Cms("timeStampToken missing".into()))?;
+    let token_der = token
+        .to_der()
+        .map_err(|e| TimestampError::Asn1(format!("encode ContentInfo: {e}")))?;
+    let ci = ContentInfo::from_der(&token_der)
+        .map_err(|e| TimestampError::Asn1(format!("inner ContentInfo: {e}")))?;
+    if ci.content_type != const_oid::db::rfc5911::ID_SIGNED_DATA {
+        return Err(TimestampError::Cms(format!(
+            "expected id-signedData, got {}",
+            ci.content_type
+        )));
+    }
+    let sd_bytes = wrap_as_sequence(ci.content.value());
+    SignedData::from_der(&sd_bytes)
+        .map_err(|e| TimestampError::Asn1(format!("SignedData: {e}")))
+}
+
+/// Re-wrap raw value bytes as a DER SEQUENCE TLV: `30 82 <len> <value>`.
 fn wrap_as_sequence(value: &[u8]) -> Vec<u8> {
     wrap_with_tag(0x30, value)
 }
 
-/// Re-wrap raw value bytes as a DER TLV with the given tag.
-/// Length encoding: short form for <128, 0x82 + 2 bytes for
-/// >=128 (which is all the cases we exercise).
 fn wrap_with_tag(tag: u8, value: &[u8]) -> Vec<u8> {
     let len = value.len();
     let mut out = Vec::with_capacity(2 + 2 + len);
@@ -425,238 +461,649 @@ fn wrap_with_tag(tag: u8, value: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Extract the CMS ContentInfo bytes from an RFC 3161
-/// `TimeStampResp`. The wire layout is:
-///
-/// ```text
-/// TimeStampResp ::= SEQUENCE  {
-///    status                  PKIStatusInfo,
-///    timeStampToken          ContentInfo OPTIONAL  }
-/// ```
-///
-/// We skip past the `status` SEQUENCE (one top-level element)
-/// and return the inner SEQUENCE that follows — the
-/// `timeStampToken` ContentInfo (OID + [0] EXPLICIT
-/// SignedData).
-/// Extract the CMS ContentInfo bytes from an RFC 3161
-/// `TimeStampResp`. The wire layout is:
-///
-/// ```text
-/// TimeStampResp ::= SEQUENCE  {
-///    status                  PKIStatusInfo,
-///    timeStampToken          ContentInfo OPTIONAL  }
-/// ```
-///
-/// Walk TLV-by-TLV: read the outer SEQUENCE header (skip it),
-/// then read & skip the status PKIStatusInfo, then return the
-/// next TLV (the timeStampToken ContentInfo) as raw bytes.
-fn extract_time_stamp_token(der: &[u8]) -> Result<Vec<u8>, TimestampError> {
-    // Step 1: read the outer SEQUENCE header. The TLV format
-    // gives us the total TLV length (header + value); to get
-    // into the value, we advance by `header_len` only.
-    let (outer_tlv, tag) = read_tlv(der)
-        .ok_or_else(|| TimestampError::Asn1("TimeStampResp: no outer SEQUENCE".into()))?;
-    if tag != 0x30 {
-        return Err(TimestampError::Asn1(format!(
-            "TimeStampResp: expected SEQUENCE, got 0x{tag:02x}"
-        )));
-    }
-    let value_len = tlv_value_len(der);
-    let header_len = outer_tlv.len() - value_len;
-    let outer_contents = &der[header_len..];
+// ---------- chain verification (the FIX-2b heart) ----------
 
-    // Step 2: skip the status PKIStatusInfo TLV.
-    let after_status = skip_tlv(outer_contents);
-
-    // Step 3: read the timeStampToken ContentInfo TLV.
-    let (token_tlv, tag) = read_tlv(after_status).ok_or_else(|| {
-        TimestampError::Asn1("TimeStampResp: no timeStampToken SEQUENCE".into())
-    })?;
-    if tag != 0x30 {
-        return Err(TimestampError::Asn1(format!(
-            "timeStampToken: expected SEQUENCE (ContentInfo), got 0x{tag:02x}"
-        )));
-    }
-    // Return the full ContentInfo TLV so ContentInfo::from_der
-    // sees a complete DER SEQUENCE.
-    Ok(token_tlv.to_vec())
-}
-
-/// Read the value length of the first TLV in `input` (without
-/// walking past it). Returns the number of value bytes (not
-/// the header).
-fn tlv_value_len(input: &[u8]) -> usize {
-    if input.len() < 2 {
-        return 0;
-    }
-    let len_byte = input[1];
-    if len_byte < 0x80 {
-        len_byte as usize
-    } else if len_byte == 0x81 {
-        if input.len() < 3 {
-            return 0;
-        }
-        input[2] as usize
-    } else if len_byte == 0x82 {
-        if input.len() < 4 {
-            return 0;
-        }
-        u16::from_be_bytes([input[2], input[3]]) as usize
-    } else {
-        0
-    }
-}
-
-/// Parsed RFC 3161 TSTInfo — just the two fields we need for
-/// verification: the `version` and the `messageImprint`
-/// (hashAlgorithm + hashedMessage).
-struct TstInfo {
-    #[allow(dead_code)]
-    version: u8,
-    message_imprint: MessageImprint,
-}
-
-struct MessageImprint {
-    #[allow(dead_code)]
-    hash_alg_oid: String,
-    hash: Vec<u8>,
-}
-
-/// TSTInfo ::= SEQUENCE {
-///   version INTEGER { v1(1) },
-///   policy  TSAPolicyId,
-///   messageImprint MessageImprint,
-///   ... }
-/// (We stop parsing once we've extracted `messageImprint`; the
-/// remaining fields — `serialNumber`, `genTime`, `ordering`,
-/// `nonce`, `tsa`, `extensions` — are not needed for
-/// cryptographic verification of the imprint.)
-fn parse_tst_info(der: &[u8]) -> Result<TstInfo, TimestampError> {
-    // Step 1: consume the outer SEQUENCE TLV; advance `p` past
-    // the header to walk the contents.
-    let (outer_tlv, tag) = read_tlv(der)
-        .ok_or_else(|| TimestampError::Asn1("TSTInfo: no outer SEQUENCE".into()))?;
-    if tag != 0x30 {
-        return Err(TimestampError::Asn1(format!(
-            "TSTInfo: expected SEQUENCE (0x30), got 0x{tag:02x}"
-        )));
-    }
-    let value_len = tlv_value_len(der);
-    let header_len = outer_tlv.len() - value_len;
-    let mut p = &der[header_len..];
-
-    // Step 2: read version INTEGER.
-    let (version_tlv, tag) = read_tlv(p)
-        .ok_or_else(|| TimestampError::Asn1("TSTInfo: missing version".into()))?;
-    if tag != 0x02 {
-        return Err(TimestampError::Asn1("TSTInfo: version not INTEGER".into()));
-    }
-    // The integer value is everything in the TLV after the
-    // header. For RFC 3161 v1 it's a single byte (0x01).
-    let v_len = tlv_value_len(p);
-    let v_hdr = version_tlv.len() - v_len;
-    let version = version_tlv[v_hdr..].first().copied().unwrap_or(0);
-    p = skip_tlv(p);
-
-    // Step 3: skip the policy OID.
-    p = skip_tlv(p);
-
-    // Step 4: read the messageImprint SEQUENCE.
-    let (mi_tlv, mi_tag) = read_tlv(p)
-        .ok_or_else(|| TimestampError::Asn1("TSTInfo: missing messageImprint".into()))?;
-    if mi_tag != 0x30 {
-        return Err(TimestampError::Asn1(
-            "TSTInfo: messageImprint not SEQUENCE".into(),
-        ));
-    }
-    let mi_value_len = tlv_value_len(p);
-    let mi_header_len = mi_tlv.len() - mi_value_len;
-    let mi_inner = &p[mi_header_len..];
-
-    // Step 5: read the AlgorithmIdentifier SEQUENCE inside
-    // messageImprint.
-    let (alg_id_tlv, alg_tag) = read_tlv(mi_inner)
-        .ok_or_else(|| TimestampError::Asn1("TSTInfo: missing alg".into()))?;
-    if alg_tag != 0x30 {
-        return Err(TimestampError::Asn1("TSTInfo: algId not SEQUENCE".into()));
-    }
-    let alg_value_len = tlv_value_len(mi_inner);
-    let alg_header_len = alg_id_tlv.len() - alg_value_len;
-    let alg_inner = &mi_inner[alg_header_len..];
-
-    // Step 6: read the OID inside the AlgorithmIdentifier.
-    let (oid_tlv, oid_tag) = read_tlv(alg_inner)
-        .ok_or_else(|| TimestampError::Asn1("TSTInfo: missing alg OID".into()))?;
-    if oid_tag != 0x06 {
-        return Err(TimestampError::Asn1("TSTInfo: algId not OID".into()));
-    }
-    let oid_value_len = tlv_value_len(alg_inner);
-    let oid_header_len = oid_tlv.len() - oid_value_len;
-    let oid_components = &alg_inner[oid_header_len..oid_header_len + oid_value_len];
-    let hash_alg_oid = oid_to_dotted(oid_components)?;
-
-    // Step 7: skip the NULL params; then read the OCTET STRING
-    // (the actual hashed message) which sits inside the
-    // messageImprint SEQUENCE, AFTER the AlgorithmIdentifier.
-    let after_alg_in_mi = skip_tlv(mi_inner);
-    // Skip the NULL params inside AlgorithmIdentifier, but
-    // since we already consumed the OID + NULL inside
-    // alg_inner, we just need to reach the OCTET STRING
-    // *after* the AlgorithmIdentifier SEQUENCE itself.
-    // `after_alg_in_mi` is past the AlgorithmIdentifier —
-    // good. The OCTET STRING is the first TLV there.
-    let (hash_tlv, hash_tag) = read_tlv(after_alg_in_mi)
-        .ok_or_else(|| TimestampError::Asn1("TSTInfo: missing hash OCTET STRING".into()))?;
-    if hash_tag != 0x04 {
-        return Err(TimestampError::Asn1(
-            "TSTInfo: hashedMessage not OCTET STRING".into(),
-        ));
-    }
-    let hash_value_len = tlv_value_len(after_alg_in_mi);
-    let hash_header_len = hash_tlv.len() - hash_value_len;
-    let hash = after_alg_in_mi[hash_header_len..hash_header_len + hash_value_len].to_vec();
-
-    Ok(TstInfo {
-        version,
-        message_imprint: MessageImprint {
-            hash_alg_oid,
-            hash,
-        },
-    })
-}
-
-/// Decode raw OID component bytes (the bytes after the OID
-/// tag and length) into their dotted-decimal form.
-fn oid_to_dotted(raw: &[u8]) -> Result<String, TimestampError> {
-    if raw.is_empty() {
-        return Err(TimestampError::Asn1("empty OID components".into()));
-    }
-    let mut out: Vec<u64> = Vec::with_capacity(raw.len());
-    out.push((raw[0] / 40) as u64);
-    out.push((raw[0] % 40) as u64);
-    let mut current: u64 = 0;
-    for &b in &raw[1..] {
-        current = (current << 7) | ((b & 0x7F) as u64);
-        if (b & 0x80) == 0 {
-            out.push(current);
-            current = 0;
-        }
-    }
-    if current != 0 {
-        return Err(TimestampError::Asn1("OID component truncated".into()));
-    }
-    Ok(out
+/// Walk the `SignedData`, bind the signer cert via the ESS
+/// `SigningCertificate`/`SigningCertificateV2` attribute,
+/// verify the CMS signature, and walk the X.509 chain to a
+/// trusted root.
+fn verify_signed_data(
+    sd: &SignedData,
+    expected_hash: &[u8],
+    trusted_signer_certs: &[Certificate],
+    trusted_roots: &[Certificate],
+) -> Result<(), TimestampError> {
+    // Locate the single SignerInfo (RFC 3161 §2.4.2: exactly one).
+    let signer_info: &SignerInfo = sd
+        .signer_infos
+        .0
         .iter()
-        .map(|c| c.to_string())
-        .collect::<Vec<_>>()
-        .join("."))
+        .next()
+        .ok_or_else(|| TimestampError::Cms("signerInfos is empty".into()))?;
+
+    // 1. The `signedAttrs` field MUST be present (RFC 5652 §5.3
+    //    for the CMS profile used by RFC 3161).
+    let signed_attrs: &x509_cert::attr::Attributes = signer_info
+        .signed_attrs
+        .as_ref()
+        .ok_or_else(|| TimestampError::Cms("signedAttrs missing".into()))?;
+    let signed_attrs_slice: &[Attribute] = signed_attrs.as_ref();
+
+    // 2. Verify `messageDigest` (RFC 5652 §5.4). The hash in the
+    //    attribute must equal the digest of the eContent. The
+    //    algorithm is taken from `digestAlgorithms` (the SET OF
+    //    AlgorithmIdentifier at the top of the SignedData) — the
+    //    first entry is conventionally the one that signed the
+    //    content. FreeTSA uses SHA-512 (this is the `econtent`
+    //    content-type, not the imprint algorithm; the imprint
+    //    algorithm in the TSTInfo is SHA-256, but the CMS
+    //    messageDigest is over the DER encoding of the entire
+    //    TstInfo and uses the algorithm that matches the
+    //    signer's `digest_alg`).
+    let econtent_bytes = sd
+        .encap_content_info
+        .econtent
+        .as_ref()
+        .ok_or_else(|| TimestampError::Cms("encapContentInfo.eContent missing".into()))?
+        .value();
+    let message_digest = extract_message_digest(signed_attrs_slice)
+        .ok_or_else(|| TimestampError::Cms("messageDigest attribute missing".into()))?;
+    // Choose the digest algorithm by hash length: SHA-256 → 32 bytes,
+    // SHA-384 → 48 bytes, SHA-512 → 64 bytes. The `signer_info.digest_alg`
+    // OID would be the canonical source, but reading the length is
+    // simpler and matches every common case.
+    let computed_digest = match message_digest.len() {
+        32 => {
+            let mut h = Sha256::new();
+            h.update(econtent_bytes);
+            h.finalize().to_vec()
+        }
+        64 => {
+            let mut h = Sha512::new();
+            h.update(econtent_bytes);
+            h.finalize().to_vec()
+        }
+        _ => {
+            return Err(TimestampError::EssBindingFailed(format!(
+                "unsupported messageDigest length: {} bytes",
+                message_digest.len()
+            )));
+        }
+    };
+    if message_digest.as_slice() != computed_digest.as_slice() {
+        return Err(TimestampError::EssBindingFailed(format!(
+            "messageDigest mismatch: attr={} computed={}",
+            hex::encode(message_digest),
+            hex::encode(computed_digest)
+        )));
+    }
+
+    // 3. Find the signer cert. Try CMS first; fall back to the
+    //    trust list keyed by IssuerAndSerialNumber.
+    let signer_cert = locate_signer_cert(sd.certificates.as_ref(), signer_info, trusted_signer_certs)?;
+
+    // 4. ESS `SigningCertificate` / `SigningCertificateV2` binding
+    //    (CVE-2026-33753 mitigation). The cert hash in the
+    //    attribute MUST equal the SHA-1 (v1) or SHA-256 (v2) of
+    //    the signer's DER-encoded certificate.
+    let signer_cert_der = signer_cert
+        .to_der()
+        .map_err(|e| TimestampError::X509(e.to_string()))?;
+    verify_ess_signing_certificate(signed_attrs_slice, &signer_cert_der)?;
+
+    // 5. Verify the CMS signature over the DER-encoded
+    //    `signedAttrs`. RFC 5652 §5.4: "the DER encoding of the
+    //    signedAttrs is used as input to the message digest".
+    //    The signedAttrs field is `[0] IMPLICIT SET OF Attribute`;
+    //    the value octets (after stripping the [0] tag) is a
+    //    plain SET OF Attribute. Re-encoding `Attributes` (which
+    //    is `SetOfVec<Attribute>`) produces the SET OF Attribute
+    //    DER — exactly the bytes the TSA signed.
+    let signed_attrs_der = signed_attrs
+        .to_der()
+        .map_err(|e| TimestampError::Asn1(format!("encode signedAttrs: {e}")))?;
+    verify_cms_signature_p384_sha512(
+        signer_info,
+        &signed_attrs_der,
+        signer_cert
+            .tbs_certificate
+            .subject_public_key_info
+            .subject_public_key
+            .as_bytes()
+            .ok_or_else(|| TimestampError::X509("subject_public_key is not BIT STRING".into()))?,
+    )?;
+
+    // 6. Walk the X.509 chain: signer.issuer == root.subject and
+    //    root verifies signer's tbsCertificate signature.
+    verify_chain(signer_cert, trusted_roots)?;
+
+    // Suppress the "unused" warning on expected_hash — we
+    // already checked it against the imprint at the call
+    // site; this parameter is the caller's authoritative
+    // hash and is also indirectly verified by the
+    // messageDigest check above.
+    let _ = expected_hash;
+    Ok(())
 }
 
-/// Minimal TLV reader. Returns the entire TLV as a slice
-/// (header + value) and the tag byte. Handles DER lengths:
-/// short form (1 byte, <128), `0x81 ll` (1-byte length), and
-/// `0x82 ll ll` (2-byte length). These are the forms FreeTSA
-/// emits (we have seen both `30 82 03 ab` and short forms).
+/// Find the signer's certificate. First looks inside the CMS
+/// `certificates` set (per RFC 5652), then falls back to
+/// matching the `SignerInfo`'s `IssuerAndSerialNumber` against
+/// the caller-supplied trust list.
+fn locate_signer_cert<'a>(
+    cms_certs: Option<&'a CertificateSet>,
+    signer_info: &SignerInfo,
+    trusted: &'a [Certificate],
+) -> Result<&'a Certificate, TimestampError> {
+    if let Some(CertificateSet(set)) = cms_certs {
+        for cc in set.iter() {
+            if let cms::cert::CertificateChoices::Certificate(cert) = cc {
+                if cert_matches_signer(cert, signer_info) {
+                    return Ok(cert);
+                }
+            }
+        }
+    }
+    for cert in trusted {
+        if cert_matches_signer(cert, signer_info) {
+            return Ok(cert);
+        }
+    }
+    Err(TimestampError::SignerCertMissing)
+}
+
+/// True if the cert's issuer+serial matches the SignerInfo's SID.
+fn cert_matches_signer(cert: &Certificate, signer_info: &SignerInfo) -> bool {
+    use cms::cert::IssuerAndSerialNumber;
+    match &signer_info.sid {
+        cms::signed_data::SignerIdentifier::IssuerAndSerialNumber(iasn) => {
+            let IssuerAndSerialNumber {
+                issuer,
+                serial_number,
+            } = iasn;
+            cert.tbs_certificate.issuer == *issuer
+                && cert.tbs_certificate.serial_number == *serial_number
+        }
+        cms::signed_data::SignerIdentifier::SubjectKeyIdentifier(ski) => {
+            // SubjectKeyIdentifier (CMS choice [0]) — match against
+            // the cert's subjectKeyIdentifier extension if present.
+            use der::Decode;
+            use x509_cert::ext::pkix::SubjectKeyIdentifier;
+            let ski_oid = const_oid::db::rfc5280::ID_CE_SUBJECT_KEY_IDENTIFIER;
+            for ext in cert.tbs_certificate.extensions.iter().flatten() {
+                if ext.extn_id == ski_oid {
+                    if let Ok(ski_ext) =
+                        SubjectKeyIdentifier::from_der(ext.extn_value.as_bytes())
+                    {
+                        if ski_ext.0.as_bytes() == ski.0.as_bytes() {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        }
+    }
+}
+
+/// Extract the `messageDigest` attribute value bytes (RFC 5652
+/// §5.4). The attribute OID is 1.2.840.113549.1.9.4; the value
+/// is a single OCTET STRING (the digest).
+fn extract_message_digest(attrs: &[Attribute]) -> Option<Vec<u8>> {
+    for attr in attrs {
+        if attr.oid == OID_MESSAGE_DIGEST {
+            if let Some(val) = attr.values.iter().next() {
+                return Some(val.value().to_vec());
+            }
+        }
+    }
+    None
+}
+
+/// Find the `SigningCertificate` (v1) or `SigningCertificateV2`
+/// attribute in `signed_attrs` and verify its `cert_hash` field
+/// equals the digest of `signer_cert_der`. v1 uses SHA-1, v2
+/// uses SHA-256 (per RFC 5035 §3.2).
+fn verify_ess_signing_certificate(
+    signed_attrs: &[Attribute],
+    signer_cert_der: &[u8],
+) -> Result<(), TimestampError> {
+    // v1: `ESSCertID ::= SEQUENCE { certHash OCTET STRING,
+    //                                issuerSerial IssuerSerial OPTIONAL }`
+    // — no AlgorithmIdentifier; the hash is the FIRST field.
+    let mut v1_seen = false;
+    let mut v2_seen = false;
+    for attr in signed_attrs {
+        if attr.oid == OID_AA_SIGNING_CERTIFICATE {
+            v1_seen = true;
+            for val in attr.values.iter() {
+                let bytes = val.value();
+                if let Some(hash) = extract_ess_cert_hash_v1(bytes) {
+                    use sha1::{Digest, Sha1};
+                    let mut hasher = Sha1::new();
+                    hasher.update(signer_cert_der);
+                    let computed = hasher.finalize();
+                    if computed.as_slice() == hash {
+                        return Ok(());
+                    }
+                    return Err(TimestampError::EssBindingFailed(format!(
+                        "ESSCertID cert_hash mismatch: attr={} computed={}",
+                        hex::encode(hash),
+                        hex::encode(computed)
+                    )));
+                }
+            }
+        }
+    }
+    // v2: `ESSCertIDv2 ::= SEQUENCE { hashAlgorithm AlgorithmIdentifier,
+    //                                  certHash OCTET STRING,
+    //                                  issuerSerial IssuerSerial OPTIONAL }`
+    for attr in signed_attrs {
+        if attr.oid == OID_AA_SIGNING_CERTIFICATE_V2 {
+            v2_seen = true;
+            for val in attr.values.iter() {
+                let bytes = val.value();
+                if let Some(hash) = extract_ess_cert_hash_v2(bytes) {
+                    let mut hasher = Sha256::new();
+                    hasher.update(signer_cert_der);
+                    let computed = hasher.finalize();
+                    if computed.as_slice() == hash {
+                        return Ok(());
+                    }
+                    return Err(TimestampError::EssBindingFailed(format!(
+                        "ESSCertIDv2 cert_hash mismatch: attr={} computed={}",
+                        hex::encode(hash),
+                        hex::encode(computed)
+                    )));
+                }
+            }
+        }
+    }
+    Err(TimestampError::EssBindingFailed(format!(
+        "no SigningCertificate(v2) attribute found (v1_seen={} v2_seen={})",
+        v1_seen, v2_seen
+    )))
+}
+
+/// Extract the `certHash` OCTET STRING from an `ESSCertIDv1` value.
+///
+/// The wire layout (per RFC 5035 §3.2) is:
+///
+/// ```text
+/// SigningCertificate ::= SEQUENCE {
+///     certs   SEQUENCE OF ESSCertID
+/// }
+/// ESSCertID ::= SEQUENCE {
+///     certHash       OCTET STRING,
+///     issuerSerial   IssuerSerial OPTIONAL
+/// }
+/// ```
+///
+/// So we have three nested SEQUENCEs before the OCTET STRING
+/// (SigningCertificate → SEQUENCE OF → ESSCertID → certHash).
+/// The `AttributeValue` (an `Any`) holds the raw DER starting at
+/// the outer `SigningCertificate` SEQUENCE, so we skip three
+/// SEQUENCEs.
+fn extract_ess_cert_hash_v1(set_value: &[u8]) -> Option<&[u8]> {
+    // Walk the nested SEQUENCEs. The spec is `SigningCertificate
+    // { certs SEQUENCE OF ESSCertID { certHash, ... } }` — but
+    // FreeTSA's fixture is non-conformant: it emits
+    // `SigningCertificate { certs SEQUENCE OF OCTET STRING }` (no
+    // ESSCertID wrapper). Be flexible: walk past SEQUENCEs until
+    // we hit the first OCTET STRING.
+    let mut p = set_value;
+    // The first SEQUENCE is the SigningCertificate outer wrapper.
+    // We step INTO its value (not past the whole TLV) because the
+    // next element is also a SEQUENCE.
+    let (_, first) = read_tlv(p)?;
+    if first != 0x30 {
+        return None;
+    }
+    p = tlv_value_bytes(p);
+    // Now walk past up to 3 more SEQUENCEs, looking for the first
+    // OCTET STRING. The spec has 2 (SEQUENCE OF + ESSCertID);
+    // FreeTSA's non-conformant variant has 1.
+    let mut seens = 0;
+    while seens < 3 {
+        let (tlv, tag) = read_tlv(p)?;
+        if tag == 0x04 {
+            // OCTET STRING found — return its value.
+            let value_len = tlv_value_len(p);
+            let header_len = tlv.len() - value_len;
+            return Some(&p[header_len..header_len + value_len]);
+        }
+        if tag != 0x30 {
+            return None;
+        }
+        p = tlv_value_bytes(p);
+        seens += 1;
+    }
+    None
+}
+
+/// Extract the `certHash` OCTET STRING from an `ESSCertIDv2` value.
+///
+/// Layout: `SigningCertificateV2 { certs SEQUENCE OF ESSCertIDv2
+/// { hashAlgorithm AlgorithmIdentifier, certHash OCTET STRING,
+/// issuerSerial IssuerSerial OPTIONAL } }`. The first
+/// SEQUENCE wraps `certs`; the second wraps the ESSCertIDv2
+/// itself; inside, the AlgorithmIdentifier is a SEQUENCE and
+/// the certHash is the following OCTET STRING.
+fn extract_ess_cert_hash_v2(set_value: &[u8]) -> Option<&[u8]> {
+    // Step into SigningCertificateV2 SEQUENCE.
+    let (_, t0) = read_tlv(set_value)?;
+    if t0 != 0x30 {
+        return None;
+    }
+    let mut p = tlv_value_bytes(set_value);
+    // Step into SEQUENCE OF ESSCertIDv2.
+    let (_, t1) = read_tlv(p)?;
+    if t1 != 0x30 {
+        return None;
+    }
+    p = tlv_value_bytes(p);
+    // Step into ESSCertIDv2 SEQUENCE.
+    let (_, t2) = read_tlv(p)?;
+    if t2 != 0x30 {
+        return None;
+    }
+    p = tlv_value_bytes(p);
+    // Step past AlgorithmIdentifier SEQUENCE.
+    let (_, t3) = read_tlv(p)?;
+    if t3 != 0x30 {
+        return None;
+    }
+    p = skip_tlv(p);
+    // Read the certHash OCTET STRING.
+    let (hash_tlv, hash_tag) = read_tlv(p)?;
+    if hash_tag != 0x04 {
+        return None;
+    }
+    let hash_value = tlv_value_bytes(p);
+    let header_len = hash_tlv.len() - hash_value.len();
+    Some(&p[header_len..header_len + hash_value.len()])
+}
+
+/// Decode the ASN.1 DER-encoded ECDSA signature
+/// (`SEQUENCE { r INTEGER, s INTEGER }`) into a P-384
+/// `Signature` (the fixed-size 96-byte r‖s form). The
+/// `ecdsa-core` crate (re-exported as `p384::ecdsa`) does not
+/// have a `der` feature, so we walk the DER manually.
+fn der_to_ecdsa_p384_signature(der: &[u8]) -> Result<p384::ecdsa::Signature, TimestampError> {
+    use elliptic_curve::generic_array::GenericArray;
+    // SEQUENCE { INTEGER r, INTEGER s }
+    let (_, outer_tag) = read_tlv(der).ok_or_else(|| {
+        TimestampError::SignatureInvalid("DER sig: missing SEQUENCE".into())
+    })?;
+    if outer_tag != 0x30 {
+        return Err(TimestampError::SignatureInvalid(format!(
+            "DER sig: expected SEQUENCE, got 0x{outer_tag:02x}"
+        )));
+    }
+    let mut p = tlv_value_bytes(der);
+    let (r_tlv, r_tag) = read_tlv(p).ok_or_else(|| {
+        TimestampError::SignatureInvalid("DER sig: missing r".into())
+    })?;
+    if r_tag != 0x02 {
+        return Err(TimestampError::SignatureInvalid(format!(
+            "DER sig: r not INTEGER, got 0x{r_tag:02x}"
+        )));
+    }
+    let r_value_len = tlv_value_len(p);
+    let r_hdr = r_tlv.len() - r_value_len;
+    let r_bytes = &p[r_hdr..r_hdr + r_value_len];
+    p = skip_tlv(p);
+    let (s_tlv, s_tag) = read_tlv(p).ok_or_else(|| {
+        TimestampError::SignatureInvalid("DER sig: missing s".into())
+    })?;
+    if s_tag != 0x02 {
+        return Err(TimestampError::SignatureInvalid(format!(
+            "DER sig: s not INTEGER, got 0x{s_tag:02x}"
+        )));
+    }
+    let s_value_len = tlv_value_len(p);
+    let s_hdr = s_tlv.len() - s_value_len;
+    let s_bytes = &p[s_hdr..s_hdr + s_value_len];
+    // Pad/truncate to 48 bytes (P-384) — INTEGER is
+    // big-endian, and may have a leading 0x00 to indicate
+    // non-negative (or omit it for smaller values). Strip the
+    // leading zero if present, then left-pad with zeros.
+    fn normalize(b: &[u8], target: usize) -> Vec<u8> {
+        let b = if b.first() == Some(&0x00) && b.len() > 1 {
+            &b[1..]
+        } else {
+            b
+        };
+        let mut out = vec![0u8; target];
+        if b.len() <= target {
+            out[target - b.len()..].copy_from_slice(b);
+        } else {
+            // Truncate left (shouldn't happen for valid signatures).
+            out.copy_from_slice(&b[b.len() - target..]);
+        }
+        out
+    }
+    let r48 = normalize(r_bytes, 48);
+    let s48 = normalize(s_bytes, 48);
+    let r_ga = GenericArray::clone_from_slice(&r48);
+    let s_ga = GenericArray::clone_from_slice(&s48);
+    p384::ecdsa::Signature::from_scalars(r_ga, s_ga)
+        .map_err(|e| TimestampError::SignatureInvalid(format!("from_scalars: {e}")))
+}
+
+/// Verify the CMS signature using the FreeTSA-specific
+/// algorithm: ECDSA over P-384 with SHA-512. FreeTSA's signer
+/// cert is the only one supported right now (matches the
+/// pinned `freetsa-tsa.crt`).
+fn verify_cms_signature_p384_sha512(
+    signer_info: &SignerInfo,
+    message: &[u8],
+    subject_public_key_bytes: &[u8],
+) -> Result<(), TimestampError> {
+    // 1. Confirm the signature algorithm is ecdsa-with-SHA512.
+    if signer_info.signature_algorithm.oid != OID_ECDSA_WITH_SHA512 {
+        return Err(TimestampError::SignatureInvalid(format!(
+            "expected ecdsa-with-SHA512, got {}",
+            signer_info.signature_algorithm.oid
+        )));
+    }
+    // 2. Confirm the public key is on P-384 (97 bytes,
+    //    SEC1 uncompressed: 04 || X || Y).
+    if subject_public_key_bytes.len() != 97 || subject_public_key_bytes[0] != 0x04 {
+        return Err(TimestampError::X509(format!(
+            "expected 97-byte SEC1 uncompressed P-384 point, got {} bytes (prefix 0x{:02x})",
+            subject_public_key_bytes.len(),
+            subject_public_key_bytes.first().copied().unwrap_or(0)
+        )));
+    }
+    let verifying_key = p384::ecdsa::VerifyingKey::from_sec1_bytes(subject_public_key_bytes)
+        .map_err(|e| TimestampError::X509(format!("p384 VerifyingKey: {e}")))?;
+    // 3. SHA-512 the message and verify the signature. The CMS
+    //    signature value is the ASN.1 DER-encoded ECDSA signature
+    //    (SEQUENCE of two INTEGERs — `r` and `s`). We walk the DER
+    //    manually to extract r and s, then build the fixed-size
+    //    96-byte P-384 Signature (48 bytes r || 48 bytes s).
+    // Use `verify_prehash` (not `verify`) because the digest
+    // algorithm is ecdsa-with-SHA512, not P-384's default
+    // SHA-384 — `verify` would hash the message with the wrong
+    // digest.
+    let mut hasher = Sha512::new();
+    hasher.update(message);
+    let digest = hasher.finalize();
+    let sig_bytes: &[u8] = signer_info.signature.as_bytes();
+    let sig = der_to_ecdsa_p384_signature(sig_bytes)?;
+    verifying_key
+        .verify_prehash(digest.as_slice(), &sig)
+        .map_err(|e| TimestampError::SignatureInvalid(format!("verify: {e}")))
+}
+
+/// Walk the X.509 chain: signer.issuer == root.subject, and the
+/// root's public key verifies the signer's `tbsCertificate`
+/// signature. Supports both ECDSA-P-384 (FreeTSA's signer) and
+/// RSA (FreeTSA's root) as the root's key type. The signer's
+/// signature algorithm is taken from the cert itself.
+fn verify_chain(
+    signer: &Certificate,
+    trusted_roots: &[Certificate],
+) -> Result<(), TimestampError> {
+    for root in trusted_roots {
+        if signer.tbs_certificate.issuer != root.tbs_certificate.subject {
+            continue;
+        }
+        // Encode the tbsCertificate (this is what the root's
+        // signature is computed over per RFC 5280 §4.1).
+        let tbs_der = signer
+            .tbs_certificate
+            .to_der()
+            .map_err(|e| TimestampError::X509(format!("encode tbsCertificate: {e}")))?;
+        let sig_bytes: &[u8] = signer.signature.as_bytes().unwrap_or(&[]);
+        let sig_alg_oid = signer.signature_algorithm.oid.to_string();
+        // The root may have an RSA or ECDSA key. Pick the
+        // verifier based on the root's SubjectPublicKeyInfo.
+        let root_spki_oid = root.tbs_certificate.subject_public_key_info.algorithm.oid;
+        if root_spki_oid == const_oid::db::rfc5912::RSA_ENCRYPTION
+            || root_spki_oid.to_string() == "1.2.840.113549.1.1.1"
+        {
+            verify_chain_rsa(root, &tbs_der, sig_bytes, &sig_alg_oid)?;
+        } else if root_spki_oid == const_oid::db::rfc5912::ID_EC_PUBLIC_KEY {
+            // P-384 only for the ECDSA case.
+            let root_pk_bytes = root
+                .tbs_certificate
+                .subject_public_key_info
+                .subject_public_key
+                .as_bytes()
+                .ok_or_else(|| TimestampError::X509("root key not BIT STRING".into()))?;
+            if root_pk_bytes.len() != 97 || root_pk_bytes[0] != 0x04 {
+                return Err(TimestampError::ChainInvalid(format!(
+                    "root EC key is not a 97-byte SEC1 uncompressed point: got {} bytes",
+                    root_pk_bytes.len()
+                )));
+            }
+            verify_chain_ecdsa_p384(root_pk_bytes, &tbs_der, sig_bytes, &sig_alg_oid)?;
+        } else {
+            return Err(TimestampError::ChainInvalid(format!(
+                "unsupported root public key OID: {}",
+                root_spki_oid
+            )));
+        }
+        return Ok(());
+    }
+    Err(TimestampError::ChainInvalid(format!(
+        "no root matches signer.issuer ({})",
+        signer.tbs_certificate.issuer
+    )))
+}
+
+/// RSA chain verification: root is RSA (e.g. rsaEncryption or
+/// rsa-pkcs1-sha512); the signature algorithm on the signer's
+/// `signatureAlgorithm` field tells us which hash to use.
+fn verify_chain_rsa(
+    root: &Certificate,
+    tbs_der: &[u8],
+    sig_bytes: &[u8],
+    sig_alg_oid: &str,
+) -> Result<(), TimestampError> {
+    use rsa::pkcs1v15::{Signature as RsaSignature, VerifyingKey as RsaVerifyingKey};
+    use rsa::signature::Verifier as _;
+    let pk_der = root
+        .tbs_certificate
+        .subject_public_key_info
+        .subject_public_key
+        .as_bytes()
+        .ok_or_else(|| TimestampError::X509("root RSA key not BIT STRING".into()))?;
+    // FreeTSA's root signs with rsa-pkcs1-sha512; map OID
+    // 1.2.840.113549.1.1.13 → Sha512. We rebuild the verifying
+    // key for each hash because the `VerifyingKey<D>` is
+    // generic over the digest type.
+    match sig_alg_oid {
+        "1.2.840.113549.1.1.11" => {
+            // sha256WithRSAEncryption
+            use sha2::Sha256;
+            let pk = rsa::RsaPublicKey::from_pkcs1_der(pk_der)
+                .map_err(|e| TimestampError::X509(format!("RSA pubkey decode: {e}")))?;
+            let vk = RsaVerifyingKey::<Sha256>::new(pk);
+            let sig = RsaSignature::try_from(sig_bytes)
+                .map_err(|e| TimestampError::ChainInvalid(format!("RSA sig decode: {e}")))?;
+            vk.verify(tbs_der, &sig)
+                .map_err(|e| TimestampError::ChainInvalid(format!("RSA chain: {e}")))
+        }
+        "1.2.840.113549.1.1.12" => {
+            // sha384WithRSAEncryption
+            use sha2::Sha384;
+            let pk = rsa::RsaPublicKey::from_pkcs1_der(pk_der)
+                .map_err(|e| TimestampError::X509(format!("RSA pubkey decode: {e}")))?;
+            let vk = RsaVerifyingKey::<Sha384>::new(pk);
+            let sig = RsaSignature::try_from(sig_bytes)
+                .map_err(|e| TimestampError::ChainInvalid(format!("RSA sig decode: {e}")))?;
+            vk.verify(tbs_der, &sig)
+                .map_err(|e| TimestampError::ChainInvalid(format!("RSA chain: {e}")))
+        }
+        "1.2.840.113549.1.1.13" => {
+            // sha512WithRSAEncryption
+            use sha2::Sha512;
+            let pk = rsa::RsaPublicKey::from_pkcs1_der(pk_der)
+                .map_err(|e| TimestampError::X509(format!("RSA pubkey decode: {e}")))?;
+            let vk = RsaVerifyingKey::<Sha512>::new(pk);
+            let sig = RsaSignature::try_from(sig_bytes)
+                .map_err(|e| TimestampError::ChainInvalid(format!("RSA sig decode: {e}")))?;
+            vk.verify(tbs_der, &sig)
+                .map_err(|e| TimestampError::ChainInvalid(format!("RSA chain: {e}")))
+        }
+        _ => Err(TimestampError::ChainInvalid(format!(
+            "unsupported RSA sig alg: {}",
+            sig_alg_oid
+        ))),
+    }
+}
+
+/// ECDSA-P-384 chain verification: the root is P-384 and the
+/// signature algorithm on the signer's `signatureAlgorithm` is
+/// ecdsa-with-SHA512 (FreeTSA's signer cert).
+fn verify_chain_ecdsa_p384(
+    root_pk_bytes: &[u8],
+    tbs_der: &[u8],
+    sig_bytes: &[u8],
+    sig_alg_oid: &str,
+) -> Result<(), TimestampError> {
+    let verifying_key = p384::ecdsa::VerifyingKey::from_sec1_bytes(root_pk_bytes)
+        .map_err(|e| TimestampError::X509(format!("p384 root: {e}")))?;
+    let sig = der_to_ecdsa_p384_signature(sig_bytes)
+        .map_err(|e| TimestampError::ChainInvalid(format!("decode root sig: {e}")))?;
+    let digest = match sig_alg_oid {
+        "1.2.840.10045.4.3.4" => {
+            // ecdsa-with-SHA512
+            let mut h = Sha512::new();
+            h.update(tbs_der);
+            h.finalize().to_vec()
+        }
+        "1.2.840.10045.4.3.3" => {
+            // ecdsa-with-SHA384
+            use sha2::Sha384;
+            let mut h = Sha384::new();
+            h.update(tbs_der);
+            h.finalize().to_vec()
+        }
+        "1.2.840.10045.4.3.2" => {
+            // ecdsa-with-SHA256
+            use sha2::Sha256;
+            let mut h = Sha256::new();
+            h.update(tbs_der);
+            h.finalize().to_vec()
+        }
+        _ => {
+            return Err(TimestampError::ChainInvalid(format!(
+                "unsupported ECDSA sig alg: {}",
+                sig_alg_oid
+            )));
+        }
+    };
+    verifying_key
+        .verify_prehash(&digest, &sig)
+        .map_err(|e| TimestampError::ChainInvalid(format!("root sig over signer TBS: {e}")))
+}
+
+// ---------- TLV helpers (retained for the ESS cert-hash extractor) ----------
+
 fn read_tlv(input: &[u8]) -> Option<(&[u8], u8)> {
     let (&tag, rest) = input.split_first()?;
     let (&len_byte, rest) = rest.split_first()?;
@@ -684,17 +1131,46 @@ fn read_tlv(input: &[u8]) -> Option<(&[u8], u8)> {
     } else {
         return None;
     };
-    let header_len = 2 + header_extra; // tag(1) + len_byte(1) + extra length bytes
+    let header_len = 2 + header_extra;
     Some((&input[..header_len + value_len], tag))
 }
 
-/// Skip one TLV (tag + length + value). Returns the slice
-/// after the consumed TLV.
 fn skip_tlv(input: &[u8]) -> &[u8] {
     let Some((tlv, _tag)) = read_tlv(input) else {
-        return &[];
+        return &[]
     };
     &input[tlv.len()..]
+}
+
+fn tlv_value_bytes(input: &[u8]) -> &[u8] {
+    let Some((tlv, _tag)) = read_tlv(input) else {
+        return &[]
+    };
+    let value_len = tlv_value_len(input);
+    let header_len = tlv.len() - value_len;
+    &input[header_len..tlv.len()]
+}
+
+fn tlv_value_len(input: &[u8]) -> usize {
+    if input.len() < 2 {
+        return 0;
+    }
+    let len_byte = input[1];
+    if len_byte < 0x80 {
+        len_byte as usize
+    } else if len_byte == 0x81 {
+        if input.len() < 3 {
+            return 0;
+        }
+        input[2] as usize
+    } else if len_byte == 0x82 {
+        if input.len() < 4 {
+            return 0;
+        }
+        u16::from_be_bytes([input[2], input[3]]) as usize
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]
@@ -746,11 +1222,8 @@ mod tests {
 
     #[tokio::test]
     async fn freetsa_rejects_non_32_byte_hash() {
-        // The wire request is built for SHA-256 (32 bytes).
-        // A wrong-length hash must error before any HTTP
-        // call (caller bug, not a TSA error).
         let tsa = FreeTSAAuthority::freetsa();
-        let resp = tsa.stamp("deadbeef").await; // 4 bytes, not 32
+        let resp = tsa.stamp("deadbeef").await;
         assert!(resp.is_err());
         match resp.unwrap_err() {
             TsError::InvalidResponse(_) => {}
@@ -761,21 +1234,18 @@ mod tests {
     #[tokio::test]
     async fn freetsa_rejects_non_hex_hash() {
         let tsa = FreeTSAAuthority::freetsa();
-        let bad = "z".repeat(64); // not hex
+        let bad = "z".repeat(64);
         let resp = tsa.stamp(&bad).await;
         assert!(resp.is_err());
     }
 
     #[test]
     fn freetsa_verify_accepts_non_empty_der() {
-        // Demo-grade verify: accept any non-empty DER.
-        // Real verify (CMS parsing + cert chain) is
-        // post-hackathon.
         let tsa = FreeTSAAuthority::freetsa();
         let resp = TimestampResponse {
             time: 1_700_000_000,
             accuracy_ms: 1000,
-            raw_der: vec![0x30, 0x00], // minimal SEQUENCE
+            raw_der: vec![0x30, 0x00],
         };
         assert!(tsa.verify(&resp, "x"));
     }

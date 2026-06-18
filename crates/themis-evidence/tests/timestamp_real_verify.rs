@@ -1,9 +1,11 @@
-//! Integration test for `FreeTSAAuthority::verify_strict` (FIX-2).
+//! Integration test for `FreeTSAAuthority::verify_strict` (FIX-2)
+//! and `FreeTSAAuthority::verify_strict_with_certs` (FIX-2b).
 //!
 //! Uses a real FreeTSA timestamp response captured at
 //! 2026-06-18 from `https://freetsa.org/tsr`. The fixture is
 //! committed at `tests/fixtures/freetsa_sample.tsr`; the
-//! FreeTSA root CA at `certs/freetsa-root.pem`.
+//! FreeTSA root CA at `certs/freetsa-root.pem`; the FreeTSA
+//! signing certificate at `certs/freetsa-tsa.crt`.
 //!
 //! Run with: `cargo test -p themis-evidence --test timestamp_real_verify`
 //!
@@ -13,7 +15,11 @@
 
 use std::fs;
 
-use themis_evidence::timestamp::{FreeTSAAuthority, TimestampResponse};
+use der::Decode;
+use themis_evidence::timestamp::{
+    FreeTSAAuthority, TimestampError, TimestampResponse, FREETSA_ROOT_PEM, FREETSA_TSA_PEM,
+};
+use x509_cert::Certificate;
 
 /// SHA-256("THEMIS_TEST_FIXTURE_2026_06_18") — the hash that was
 /// sent to FreeTSA when the fixture was generated. The fixture
@@ -32,6 +38,15 @@ fn load_fixture() -> TimestampResponse {
         accuracy_ms: 1000,
         raw_der: raw,
     }
+}
+
+/// Parse a single PEM cert. Used for both the FreeTSA root
+/// (PEM is the long-lived one) and the FreeTSA TSA cert
+/// (pinned alongside the response fixture).
+fn parse_pem(bytes: &[u8]) -> Certificate {
+    let (label, der_bytes) = der::pem::decode_vec(bytes).expect("PEM decode");
+    assert_eq!(label, "CERTIFICATE", "expected CERTIFICATE PEM label");
+    Certificate::from_der(&der_bytes).expect("X.509 DER decode")
 }
 
 #[test]
@@ -97,4 +112,93 @@ fn verify_quick_still_accepts_non_empty_der() {
     let tsa = FreeTSAAuthority::freetsa();
     let resp = load_fixture();
     assert!(tsa.verify_quick(&resp, "ignored"));
+}
+
+// --- FIX-2b: full RFC 3161 + CMS + X.509 chain verification ---
+
+#[test]
+fn verify_strict_with_certs_accepts_matching_hash() {
+    // Full chain check: parse the fixture, verify the
+    // message imprint, the CMS signature (ECDSA P-384 +
+    // SHA-512), the ESS SigningCertificate binding
+    // (CVE-2026-33753 mitigation), and the X.509 chain
+    // (signer.issuer == root.subject + root verifies
+    // signer's tbsCertificate).
+    let tsa = FreeTSAAuthority::freetsa();
+    let resp = load_fixture();
+    let tsa_cert = parse_pem(FREETSA_TSA_PEM);
+    let root = parse_pem(FREETSA_ROOT_PEM);
+    let result = tsa.verify_strict_with_certs(&resp, &FIXTURE_HASH, &[tsa_cert], &[root]);
+    match result {
+        Ok(true) => {}
+        Ok(false) => panic!("verify_strict_with_certs returned Ok(false) on a known-good fixture"),
+        Err(e) => panic!("verify_strict_with_certs failed: {e:?}"),
+    }
+}
+
+#[test]
+fn verify_strict_with_certs_rejects_tampered_hash() {
+    // The full path should still return Ok(false) on a clean
+    // hash mismatch (not a different Err variant — the
+    // hash check happens before the chain check).
+    let tsa = FreeTSAAuthority::freetsa();
+    let resp = load_fixture();
+    let tsa_cert = parse_pem(FREETSA_TSA_PEM);
+    let root = parse_pem(FREETSA_ROOT_PEM);
+    let mut wrong = FIXTURE_HASH;
+    wrong[0] ^= 0x01;
+    let result = tsa.verify_strict_with_certs(&resp, &wrong, &[tsa_cert], &[root]);
+    assert!(
+        result.is_ok(),
+        "hash mismatch should be Ok(false), not Err: {:?}",
+        result
+    );
+    assert!(!result.unwrap());
+}
+
+#[test]
+fn verify_strict_with_certs_fails_without_trusted_signer() {
+    // If we don't supply the FreeTSA TSA cert and the CMS
+    // omits the certificates field (as FreeTSA does), the
+    // lookup must fail with SignerCertMissing.
+    let tsa = FreeTSAAuthority::freetsa();
+    let resp = load_fixture();
+    let root = parse_pem(FREETSA_ROOT_PEM);
+    let result = tsa.verify_strict_with_certs(&resp, &FIXTURE_HASH, &[], &[root]);
+    match result {
+        Err(TimestampError::SignerCertMissing) | Err(TimestampError::Cms(_)) => {}
+        other => panic!(
+            "expected SignerCertMissing or Cms error (CMS has no certs and trust list is empty), got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn verify_strict_with_certs_fails_with_untrusted_root() {
+    // The chain check rejects the response if no root
+    // matches signer.issuer.
+    let tsa = FreeTSAAuthority::freetsa();
+    let resp = load_fixture();
+    let tsa_cert = parse_pem(FREETSA_TSA_PEM);
+    // Synthesize an unrelated root by re-encoding the TSA
+    // cert as a self-signed-looking root. The issuer match
+    // will fail, so we expect ChainInvalid.
+    let unrelated = tsa_cert.clone();
+    let result = tsa.verify_strict_with_certs(
+        &resp,
+        &FIXTURE_HASH,
+        &[tsa_cert],
+        // Use the same cert as both signer and root — issuer
+        // matches (signer.issuer == root.subject), but the
+        // root's public key won't verify the signer's
+        // tbsCertificate (the signer isn't self-signed). The
+        // chain check therefore returns ChainInvalid.
+        &[unrelated],
+    );
+    assert!(
+        matches!(result, Err(TimestampError::ChainInvalid(_))),
+        "expected ChainInvalid when root cannot verify signer, got {:?}",
+        result
+    );
 }
