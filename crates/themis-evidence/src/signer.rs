@@ -95,12 +95,6 @@ pub enum SignerError {
     /// Key file is not exactly 32 bytes.
     #[error("invalid key length: expected 32, got {0}")]
     InvalidKeyLength(usize),
-    /// `for_tenant` was called with an id that has no baked key.
-    /// Retained for callers that explicitly want to reject unknown
-    /// ids (e.g. when enforcing an allow-list); not raised by
-    /// `for_tenant` itself after FIX-6 (SaaS mode accepts any id).
-    #[error("no baked key for tenant: {0} (use `from_seed` or `new` instead)")]
-    UnknownTenant(String),
 }
 
 /// Per-tenant signing service. Holds the signing key in memory;
