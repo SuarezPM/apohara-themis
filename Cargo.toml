@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = [
+    "crates/*",
+    # C-15 / AC15: cross-domain 1K bench harness. Separate crate to
+    # keep the bench binary hermetic (no async, no LLM, no
+    # orchestrator) and CI-fast.
+    "crates/themis-bench",
+]
 
 [workspace.package]
 version = "0.1.0"

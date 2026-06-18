@@ -1,0 +1,21 @@
+[package]
+name = "themis-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "THEMIS bench harness — cross-domain 1K datasets (InvoiceNet, Czech Bank, Adult Income). Story C-15 / AC15."
+
+[dependencies]
+# Pure deterministic mock — no LLM, no orchestrator, no async. The bench
+# harness is a measurement tool, not the production pipeline.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[dev-dependencies]
+# Integration test in tests/datasets.rs runs the bench against each
+# 1K dataset and asserts recall thresholds. No external dep needed
+# beyond what the lib already uses.
