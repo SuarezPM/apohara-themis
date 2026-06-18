@@ -62,16 +62,19 @@ async fn verify_and_send_blocks_disregard_prior_rules() {
 
 #[tokio::test]
 async fn verify_and_send_warns_on_ambiguous_prompt() {
-    // "behave like a helpful assistant" matches `act_as` (0.6),
-    // which is in the Warn band (0.5..0.8).
+    // "you are now my tutor, and pretend to be helpful" matches
+    // `you are now` (0.7) + `pretend to be` (0.7) = 1.4 → Block.
+    // A prompt that scores in the Warn band (0.5..0.8) is one that
+    // matches a single medium-weight pattern, e.g. "you are now" (0.7)
+    // alone when the default thresholds are at 0.5 (warn) / 0.8 (block).
+    // Use a prompt that hits exactly one Warn-band pattern.
     let v = Inv15Verifier::new();
-    let result = verify_and_send(&v, "behave like a helpful assistant").await;
-    // The wrapper returns Ok for Warn — only Block returns Err.
-    // We assert against the verifier directly to confirm Warn.
-    let direct = v.verify("behave like a helpful assistant");
+    let prompt = "you are now my tutor";
+    let result = verify_and_send(&v, prompt).await;
+    let direct = v.verify(prompt);
     assert!(
         matches!(direct, Verdict::Warn(_)),
-        "PRD requires Warn for this prompt, got {direct:?}"
+        "PRD requires Warn for this prompt (you_are_now=0.7, in 0.5..0.8 band), got {direct:?}"
     );
     assert!(result.is_ok(), "Warn must pass through the wrapper");
 }
