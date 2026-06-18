@@ -8,28 +8,39 @@
 //!
 //! Routing (locked PRD):
 //!
-//! | Agent             | Backend    | Model                             |
-//! |-------------------|------------|-----------------------------------|
-//! | `fraud_auditor`   | Featherless| `Qwen/Qwen3-Coder-30B-A3B-Instruct`|
-//! | `extractor`       | AIML API   | `anthropic/claude-sonnet-4.5`     |
-//! | `po_matcher`      | (none)     | deterministic PO lookup           |
-//! | `gaap_classifier` | AIML API   | `anthropic/claude-sonnet-4.5`     |
-//! | `provenance_signer` | (none)   | Ed25519 sign — no LLM             |
-//! | `demo_narrator`   | AIML API   | `anthropic/claude-sonnet-4.5`     |
-//! | `regression_tester`| AIML API  | `anthropic/claude-sonnet-4.5`     |
-//! | `audit_watchdog`  | AIML API   | `anthropic/claude-sonnet-4.5`     |
+//! | Agent             | Backend              | Model                                |
+//! |-------------------|----------------------|--------------------------------------|
+//! | `fraud_auditor`   | Featherless (Qwen)   | `Qwen/Qwen3-Coder-30B-A3B-Instruct`  |
+//! | `extractor`       | AIML API             | `anthropic/claude-sonnet-4.5`        |
+//! | `po_matcher`      | (none)               | deterministic PO lookup              |
+//! | `gaap_classifier` | Featherless (Llama)  | `meta-llama/Llama-3.3-70B-Instruct`  |
+//! | `provenance_signer` | (none)             | Ed25519 sign — no LLM                |
+//! | `demo_narrator`   | AIML API             | `anthropic/claude-sonnet-4.5`        |
+//! | `regression_tester`| AIML API            | `anthropic/claude-sonnet-4.5`        |
+//! | `audit_watchdog`  | AIML API             | `anthropic/claude-sonnet-4.5`        |
 //!
-//! The fraud_auditor is the ONLY agent routed to Featherless.
-//! The other 5 LLM-driven agents (extractor, gaap_classifier,
-//! demo_narrator, regression_tester, audit_watchdog) are routed
-//! to AIML API. po_matcher and provenance_signer are
-//! deterministic (no LLM).
+//! Three LLM lineages are in play:
+//! 1. `AgentBackend::AimlApi` — AIML API gateway (Claude Sonnet 4.5).
+//! 2. `AgentBackend::Featherless` — Featherless AI (Qwen3-Coder-30B).
+//! 3. `AgentBackend::FeatherlessLlama70b` — Featherless AI
+//!    (Llama-3.3-70B-Instruct). Distinct lineage from
+//!    `Featherless` so model-routing metrics, logs and
+//!    per-tenant cost breakdowns separate cleanly.
+//!
+//! The fraud_auditor is on Qwen3-Coder (the original 2-lineage
+//! routing decision). The gaap_classifier was migrated to
+//! Llama-3.3-70B to add a 3rd lineage and exercise the
+//! GAAP-classification prompt against a different model family.
+//! The other 4 LLM-driven agents (extractor, demo_narrator,
+//! regression_tester, audit_watchdog) remain on AIML API.
+//! po_matcher and provenance_signer are deterministic (no LLM).
 //!
 //! Graceful degradation: if `FEATHERLESS_API_KEY` is unset, the
-//! fraud_auditor falls back to AIML API (same model as the
-//! other 5). If `AIML_API_KEY` is also unset, all 6 LLM-driven
-//! agents fall back to `MockLlmProvider`. The binary never
-//! panics on missing keys.
+//! Featherless-routed agents (fraud_auditor, gaap_classifier)
+//! fall back to AIML API (same model as the other 4). If
+//! `AIML_API_KEY` is also unset, all 6 LLM-driven agents fall
+//! back to `MockLlmProvider`. The binary never panics on
+//! missing keys.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -44,6 +55,13 @@ use themis_compliance::featherless_metrics::FeatherlessMetricsHandle;
 /// is available. Exposed as a constant so the test suite can
 /// assert on it without duplicating the string.
 pub const FRAUD_AUDITOR_FEATHERLESS_MODEL: &str = "Qwen/Qwen3-Coder-30B-A3B-Instruct";
+
+/// The model id the gaap_classifier routes to when Featherless
+/// is available. Distinct lineage from the fraud_auditor's
+/// Qwen3-Coder model — Llama-3.3-70B gives the GAAP classification
+/// prompt a different family of reasoning weights.
+pub const GAAP_CLASSIFIER_FEATHERLESS_MODEL: &str =
+    "meta-llama/Llama-3.3-70B-Instruct";
 
 /// The AIML API model id used by the 5 non-fraud LLM-driven
 /// agents (and the fraud_auditor fallback when the Featherless
@@ -60,6 +78,10 @@ pub enum AgentBackend {
     AimlApi,
     /// Featherless AI (Qwen3-Coder-30B-A3B-Instruct).
     Featherless,
+    /// Featherless AI (Llama-3.3-70B-Instruct). Distinct
+    /// lineage from `Featherless` so per-model metrics and
+    /// routing badges stay separated.
+    FeatherlessLlama70b,
     /// No LLM (deterministic agent).
     None,
 }
@@ -70,6 +92,7 @@ impl AgentBackend {
         match self {
             AgentBackend::AimlApi => "aimlapi",
             AgentBackend::Featherless => "featherless",
+            AgentBackend::FeatherlessLlama70b => "featherless-llama70b",
             AgentBackend::None => "deterministic",
         }
     }
@@ -79,8 +102,9 @@ impl AgentBackend {
 /// orchestrator's HashMap keys (see
 /// `test_support::build_stub_agents`).
 ///
-/// `fraud_auditor` → `AgentBackend::Featherless` (the one
-///   routing decision the PRD locks).
+/// `fraud_auditor` → `AgentBackend::Featherless` (Qwen3-Coder).
+/// `gaap_classifier` → `AgentBackend::FeatherlessLlama70b`
+///   (Llama-3.3-70B — the 3rd lineage).
 ///
 /// All other LLM-driven agents → `AgentBackend::AimlApi`.
 ///
@@ -93,10 +117,10 @@ impl AgentBackend {
 pub fn backend_for_agent(agent_name: &str) -> AgentBackend {
     match agent_name {
         "fraud_auditor" => AgentBackend::Featherless,
+        "gaap_classifier" => AgentBackend::FeatherlessLlama70b,
         "po_matcher" | "provenance_signer" => AgentBackend::None,
         // All other LLM-driven agents.
         "extractor"
-        | "gaap_classifier"
         | "demo_narrator"
         | "regression_tester"
         | "audit_watchdog" => AgentBackend::AimlApi,
@@ -109,18 +133,20 @@ pub fn backend_for_agent(agent_name: &str) -> AgentBackend {
 /// `test_support::build_stub_agents` consumes: `agent_name
 /// -> Arc<dyn LlmBackend>`).
 ///
-/// The `featherless_metrics` handle is attached to the
-/// Featherless backend for the fraud_auditor, so every
-/// successful (and failed) fraud_auditor call increments the
+/// The `featherless_metrics` handle is attached to BOTH
+/// Featherless-routed agents (fraud_auditor + gaap_classifier),
+/// so every successful (and failed) call increments the
 /// counters exposed at `GET /metrics/featherless`.
 ///
 /// Graceful degradation order (per agent):
-/// 1. `fraud_auditor`:
+/// 1. `fraud_auditor` (Qwen3-Coder) and `gaap_classifier`
+///    (Llama-3.3-70B):
 ///    1. `FEATHERLESS_API_KEY` set → `FeatherlessBackend` (with
 ///       metrics sink attached).
 ///    2. `AIML_API_KEY` set → `AIMLAPIBackend` (fallback).
 ///    3. neither → `MockLlmProvider` (test mode).
-/// 2. Other LLM-driven agents:
+/// 2. Other LLM-driven agents (extractor, demo_narrator,
+///    regression_tester, audit_watchdog):
 ///    1. `AIML_API_KEY` set → `AIMLAPIBackend`.
 ///    2. neither → `MockLlmProvider`.
 /// 3. Deterministic agents: `MockLlmProvider` (the
@@ -131,7 +157,7 @@ pub fn build_routed_dispatch(
     let mut m: HashMap<String, Arc<dyn LlmBackend>> = HashMap::new();
 
     // --- fraud_auditor: Featherless (Qwen3-Coder-30B) ---
-    let featherless: Arc<dyn LlmBackend> = match FeatherlessBackend::from_env(
+    let fraud_auditor_llm: Arc<dyn LlmBackend> = match FeatherlessBackend::from_env(
         FRAUD_AUDITOR_FEATHERLESS_MODEL,
     ) {
         Some(b) => {
@@ -143,16 +169,30 @@ pub fn build_routed_dispatch(
             None => shared(MockLlmProvider::new("mock-fraud-auditor-fallback")),
         },
     };
-    m.insert("fraud_auditor".to_string(), featherless);
+    m.insert("fraud_auditor".to_string(), fraud_auditor_llm);
 
-    // --- 5 AIML API agents ---
+    // --- gaap_classifier: Featherless (Llama-3.3-70B) — 3rd lineage ---
+    let gaap_classifier_llm: Arc<dyn LlmBackend> = match FeatherlessBackend::from_env(
+        GAAP_CLASSIFIER_FEATHERLESS_MODEL,
+    ) {
+        Some(b) => {
+            let b = b.with_metrics(featherless_metrics.clone());
+            shared(b)
+        }
+        None => match AIMLAPIBackend::from_env(AIML_API_MODEL) {
+            Some(b) => shared(b),
+            None => shared(MockLlmProvider::new("mock-gaap-classifier-fallback")),
+        },
+    };
+    m.insert("gaap_classifier".to_string(), gaap_classifier_llm);
+
+    // --- 4 AIML API agents ---
     let aiml: Arc<dyn LlmBackend> = match AIMLAPIBackend::from_env(AIML_API_MODEL) {
         Some(b) => shared(b),
         None => shared(MockLlmProvider::new("mock-aiml-fallback")),
     };
     for name in [
         "extractor",
-        "gaap_classifier",
         "demo_narrator",
         "regression_tester",
         "audit_watchdog",
@@ -200,10 +240,20 @@ mod tests {
     }
 
     #[test]
-    fn gaap_classifier_routes_to_aiml() {
+    fn gaap_classifier_routes_to_llama70b() {
+        // FIX-5: gaap_classifier was promoted to the 3rd lineage
+        // (Featherless Llama-3.3-70B-Instruct). It is no longer
+        // on the AIML API default; the routing decision is
+        // distinct from `fraud_auditor` (Qwen3-Coder) too, so
+        // per-agent metrics and SSE `provider_active` events
+        // stay separate.
         assert_eq!(
             backend_for_agent("gaap_classifier"),
-            AgentBackend::AimlApi
+            AgentBackend::FeatherlessLlama70b
+        );
+        assert_eq!(
+            backend_for_agent("gaap_classifier").as_str(),
+            "featherless-llama70b"
         );
     }
 
@@ -283,7 +333,10 @@ mod tests {
     }
 
     #[test]
-    fn other_five_agents_in_dispatch_are_aiml_when_key_set() {
+    fn other_four_agents_in_dispatch_are_aiml_when_key_set() {
+        // After FIX-5, gaap_classifier is on the Featherless Llama70b
+        // lineage, so this assertion covers the remaining 4 AIML API
+        // agents only.
         if std::env::var("AIML_API_KEY").ok().filter(|s| !s.is_empty()).is_none() {
             eprintln!("skip: AIML_API_KEY not set");
             return;
@@ -292,7 +345,6 @@ mod tests {
         let dispatch = build_routed_dispatch(metrics);
         for name in [
             "extractor",
-            "gaap_classifier",
             "demo_narrator",
             "regression_tester",
             "audit_watchdog",
@@ -304,5 +356,21 @@ mod tests {
                 "{name} must use the AIML API Claude Sonnet model when key is set"
             );
         }
+    }
+
+    #[test]
+    fn gaap_classifier_in_dispatch_is_llama70b_when_key_set() {
+        if std::env::var("FEATHERLESS_API_KEY").ok().filter(|s| !s.is_empty()).is_none() {
+            eprintln!("skip: FEATHERLESS_API_KEY not set");
+            return;
+        }
+        let metrics = new_shared_featherless_metrics();
+        let dispatch = build_routed_dispatch(metrics);
+        let gc = dispatch.get("gaap_classifier").unwrap();
+        assert_eq!(
+            gc.model_id(),
+            GAAP_CLASSIFIER_FEATHERLESS_MODEL,
+            "gaap_classifier must use the Featherless Llama-3.3-70B model when key is set"
+        );
     }
 }
