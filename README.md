@@ -290,16 +290,21 @@ cargo test --workspace --exclude themis-frontend
 
 ## 🤖 AI assistance — honest disclosure
 
-THEMIS was built solo in a 12-day sprint by Pablo M. Suarez, with AI assistance used heavily for:
+THEMIS 3.0 was built with AI-assisted iterative development via the
+`oh-my-claudecode` plugin (ralph + autopilot + deslop loops). This
+means:
 
-- **Boilerplate**: trait definitions, Cargo manifests, error enums (`thiserror` scaffolding)
-- **Debugging**: stack-trace analysis, cargo-deny advisory remediation
-- **Refactoring**: dead-code elimination (deslop pass), naming consistency
-- **Documentation**: README structure, doc comments, architecture diagrams (Mermaid)
-- **Test scaffolding**: e2e test skeletons, fixture loaders, snapshot tests
-- **Integration tests for sponsor APIs**: request/response shape discovery, retry logic
+- **AI-generated**: trait definitions, Cargo manifests, error enums,
+  test scaffolding, doc comments, integration tests for sponsor APIs,
+  request/response shape discovery, retry logic, README structure
+- **Human-decided**: architecture (5-agent chat room topology, BAAAR
+  5-condition gate semantics), AIBOM schema, threat model, per-tenant
+  key isolation strategy, cryptographic protocol choices, the pivot
+  from "stubs" to "measured production" after the external audit on
+  2026-06-18
 
-What AI was **not** used for: the architecture decisions, the BAAAR gate semantics, the AIBOM schema design, the threat model, the per-tenant key isolation strategy, or any of the cryptographic protocol choices. Every wire format has a snapshot test; every external API has an integration test gated by env.
+The audit trail (`.omc/state/sessions/`, git co-author metadata) is
+verifiable by anyone reading the repo.
 
 ---
 
