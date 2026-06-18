@@ -59,12 +59,12 @@
 ```mermaid
 flowchart TB
     subgraph Band["🌐 Band chat room (real WebSocket · Phoenix Channels)"]
-        EX["Extractor<br/>Claude Sonnet 4.5"]
-        PO["PO Matcher<br/>deterministic"]
-        FA["Fraud Auditor<br/>Qwen3-Coder-30B"]
-        GC["GAAP Classifier<br/>Claude Sonnet 4.5"]
-        DN["Demo Narrator<br/>shadow"]
-        AW["Audit Watchdog<br/>shadow"]
+        EX["Extractor\nClaude Sonnet 4.5"]
+        PO["PO Matcher\ndeterministic"]
+        FA["Fraud Auditor\nQwen3-Coder-30B"]
+        GC["GAAP Classifier\nClaude Sonnet 4.5"]
+        DN["Demo Narrator\nshadow"]
+        AW["Audit Watchdog\nshadow"]
     end
 
     EX -- "extracted JSON" --> FA
@@ -72,12 +72,12 @@ flowchart TB
     FA -- "risk_score" --> BG
     GC -- "GAAP map" --> BG
 
-    BG{{"🚨 BAAAR kill-switch<br/>5 hard conditions"}}
+    BG{{"🚨 BAAAR kill-switch\n5 hard conditions"}}
     BG -- "halt" --> H["Red border + Evidence Packet"]
-    BG -- "approve" --> PS["Provenance Signer<br/>Ed25519 + BLAKE3"]
+    BG -- "approve" --> PS["Provenance Signer\nEd25519 + BLAKE3"]
 
-    PS --> EP[/"Evidence Packet<br/>PDF + JSON + Rekor"/]
-    EP --> V["`themis-verify` offline<br/><30 s"]
+    PS --> EP[/"Evidence Packet\nPDF + JSON + Rekor"/]
+    EP --> V["`themis-verify` offline\n<30 s"]
 
     style BG fill:#dc2626,color:#fff,stroke:#dc2626
     style EP fill:#d4a017,color:#0a0e1a,stroke:#d4a017
