@@ -59,6 +59,12 @@ impl FanoutRegistry {
     }
 }
 
+impl Default for BandLiveState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BandLiveState {
     /// New empty state with a 1024-event broadcast buffer.
     pub fn new() -> Self {

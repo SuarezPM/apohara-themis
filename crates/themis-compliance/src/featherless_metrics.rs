@@ -262,6 +262,7 @@ pub fn cost_usd(tokens_in: u32, tokens_out: u32) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aiml_metrics::AimlApiMetrics;
 
     #[test]
     fn fresh_metrics_are_all_zero() {
@@ -409,11 +410,3 @@ mod tests {
         );
     }
 }
-
-// Re-export the AIML metrics struct shape (only used by the
-// field-shape test above). Avoids a hard dep on a fresh
-// `themis-compliance::aiml_metrics` import inside the test
-// module — the test only needs the field set, not the full
-// semantics.
-#[cfg(test)]
-use crate::aiml_metrics::AimlApiMetrics;

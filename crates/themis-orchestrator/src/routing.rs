@@ -38,9 +38,7 @@ use themis_agents::llm::{
     shared, AIMLAPIBackend, FeatherlessBackend, LlmBackend, MockLlmProvider,
 };
 
-use themis_compliance::featherless_metrics::{
-    FeatherlessMetricsHandle, FeatherlessMetricsInner,
-};
+use themis_compliance::featherless_metrics::FeatherlessMetricsHandle;
 
 /// The model id the fraud_auditor routes to when Featherless
 /// is available. Exposed as a constant so the test suite can
@@ -118,13 +116,13 @@ pub fn backend_for_agent(agent_name: &str) -> AgentBackend {
 ///
 /// Graceful degradation order (per agent):
 /// 1. `fraud_auditor`:
-///    a. `FEATHERLESS_API_KEY` set → `FeatherlessBackend` (with
+///    1. `FEATHERLESS_API_KEY` set → `FeatherlessBackend` (with
 ///       metrics sink attached).
-///    b. `AIML_API_KEY` set → `AIMLAPIBackend` (fallback).
-///    c. neither → `MockLlmProvider` (test mode).
+///    2. `AIML_API_KEY` set → `AIMLAPIBackend` (fallback).
+///    3. neither → `MockLlmProvider` (test mode).
 /// 2. Other LLM-driven agents:
-///    a. `AIML_API_KEY` set → `AIMLAPIBackend`.
-///    b. neither → `MockLlmProvider`.
+///    1. `AIML_API_KEY` set → `AIMLAPIBackend`.
+///    2. neither → `MockLlmProvider`.
 /// 3. Deterministic agents: `MockLlmProvider` (the
 ///    `LlmStubAgent` will never call it).
 pub fn build_routed_dispatch(
@@ -175,15 +173,9 @@ pub fn build_routed_dispatch(
     m
 }
 
-/// Build a fresh shared `FeatherlessMetrics` handle. Convenience
-/// for the production binary: pass the result to
-/// `build_routed_dispatch` AND to `AppState` so the HTTP layer
-/// can serve `/metrics/featherless`.
-pub fn new_featherless_metrics() -> FeatherlessMetricsHandle {
-    std::sync::Arc::new(FeatherlessMetricsInner::new())
-}
-
-// Re-export the canonical shared-handle constructor.
+/// Build a fresh shared `FeatherlessMetrics` handle. Re-export of
+/// the canonical constructor in `themis-compliance` so callers
+/// can route through one path.
 pub use themis_compliance::featherless_metrics::new_shared as new_shared_featherless_metrics;
 
 #[cfg(test)]
