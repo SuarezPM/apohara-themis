@@ -77,7 +77,7 @@ flowchart TB
     BG -- "approve" --> PS["Provenance Signer\nEd25519 + BLAKE3"]
 
     PS --> EP[/"Evidence Packet\nPDF + JSON + Rekor"/]
-    EP --> V["`themis-verify` offline\n<30 s"]
+    EP --> V["themis-verify offline\n<30 s"]
 
     style BG fill:#dc2626,color:#fff,stroke:#dc2626
     style EP fill:#d4a017,color:#0a0e1a,stroke:#d4a017
