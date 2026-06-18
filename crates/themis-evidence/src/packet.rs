@@ -65,6 +65,24 @@ pub struct SealedPacket {
     /// was introduced (back-compat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub iso_42001: Option<serde_json::Value>,
+    /// C2PA / SealChain wrapper receipt (C-10 / G30). The full
+    /// `C2paReceipt` produced by `SealChainWrapper::wrap_packet`
+    /// — embedded C2PA manifest, EU AI Act Art 50 assertion,
+    /// and the EU registration id. `None` when SealChain is
+    /// disabled (e.g. test fixtures) or for packets sealed
+    /// before C-10 landed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealchain_receipt: Option<crate::sealchain_wrap::C2paReceipt>,
+    /// EU AI Act Article 49 mock registration id (C-10 /
+    /// G30). Embedded in the C2PA manifest's Art 50
+    /// assertion. A short, stable identifier (e.g.
+    /// `EU-AIA-REG-2026-APOHARA-001`) that downstream
+    /// regulators can resolve against the public
+    /// registration directory. Carried as a top-level
+    /// field on the SealedPacket for fast lookup without
+    /// parsing the C2PA manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eu_registration_id: Option<String>,
 }
 
 /// DSSE envelope over the canonical JSON payload.
@@ -339,6 +357,8 @@ impl EvidenceService {
                 "improvement_cycle": "post-hackathon sprint (vNext roadmap)",
                 "lifecycle_stage": "production",
             })),
+            sealchain_receipt: None,
+            eu_registration_id: None,
         })
     }
 

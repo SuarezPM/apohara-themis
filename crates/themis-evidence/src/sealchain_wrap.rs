@@ -378,6 +378,8 @@ mod tests {
             dsse_envelope: None,
             rekor_entry: None,
             iso_42001: None,
+            sealchain_receipt: None,
+            eu_registration_id: None,
         }
     }
 

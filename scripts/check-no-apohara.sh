@@ -30,26 +30,42 @@ cd "$REPO_ROOT"
 VIOLATIONS=0
 
 # 1. Rust source: any `use apohara_` import
-echo "Checking Rust source for 'use apohara_' imports..."
-# `apohara_` followed by an identifier char or `::`. The trailing
-# `_` in apohara_ is a literal character class [a-zA-Z0-9_] so we
-# match the prefix literally; \s with the literal `_` is what
-# broke bash's word-splitting. Use fixed-string with grep -F first,
-# then a regex pass to surface the actual matches.
-if grep -rEn '(use[[:space:]]+apohara)|(apohara[_a-zA-Z0-9]*[[:space:]]*::)' crates/ 2>/dev/null; then
-    echo "✗ Found apohara_ imports in Rust source" >&2
+#    Allow-list (C-17 / C-02 + C-10): the two upstream crates
+#    `apohara_agentguard` and `apohara_sealchain_core` are
+#    legitimate workspace deps. Any other `use apohara_*` is
+#    rejected. The allow-list matches both `use` statements and
+#    fully-qualified `apohara_xxx::yyy` paths.
+echo "Checking Rust source for 'use apohara_' imports (allow-list: agentguard, sealchain-core)..."
+FORBIDDEN_IMPORTS=$(grep -rEn '(use[[:space:]]+apohara)|(apohara[_a-zA-Z0-9]*[[:space:]]*::)' crates/ 2>/dev/null \
+    | grep -Ev 'apohara_(agentguard|sealchain_core)' \
+    || true)
+if [ -n "$FORBIDDEN_IMPORTS" ]; then
+    echo "$FORBIDDEN_IMPORTS" >&2
+    echo "✗ Found non-allow-listed apohara_ imports in Rust source" >&2
     VIOLATIONS=$((VIOLATIONS + 1))
 else
-    echo "  ✓ no apohara_ imports in crates/"
+    echo "  ✓ no non-allow-listed apohara_ imports in crates/"
 fi
 
 # 2. Cargo.toml path/git dependencies on apohara-*
-echo "Checking Cargo.toml for apohara- path dependencies..."
-if grep -rEn 'apohara-?[a-zA-Z0-9_-]*\s*=\s*\{' crates/ 2>/dev/null; then
-    echo "✗ Found apohara-* path deps in Cargo.toml" >&2
+#    Allow-list (C-17 / C-02 + C-10): the workspace is allowed
+#    to depend on TWO specific apohara-* path crates that are
+#    hard requirements of the spec:
+#      - apohara-agentguard      (C-02 / G15,G18,G33) — seccomp+Landlock sandbox
+#      - apohara-sealchain-core  (C-10 / G30)         — C2PA seal wrapper
+#    Every OTHER `apohara-*` path/git dep is rejected. This
+#    keeps the dependency surface minimal while honoring the
+#    two non-negotiable upstream crates.
+echo "Checking Cargo.toml for apohara- path dependencies (allow-list: agentguard, sealchain-core)..."
+FORBIDDEN_DEPS=$(grep -rEn 'apohara-?[a-zA-Z0-9_-]*\s*=\s*\{' crates/ 2>/dev/null \
+    | grep -Ev 'apohara-(agentguard|sealchain-core)\s*=' \
+    || true)
+if [ -n "$FORBIDDEN_DEPS" ]; then
+    echo "$FORBIDDEN_DEPS" >&2
+    echo "✗ Found non-allow-listed apohara-* path deps in Cargo.toml" >&2
     VIOLATIONS=$((VIOLATIONS + 1))
 else
-    echo "  ✓ no apohara-* path deps"
+    echo "  ✓ no non-allow-listed apohara-* path deps"
 fi
 
 # 3. Binary names matching apohara-*

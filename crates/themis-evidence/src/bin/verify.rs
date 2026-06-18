@@ -170,6 +170,45 @@ fn main() -> ExitCode {
                     println!("  iso_42001:     not populated");
                 }
             }
+            // C-10 (G30) / C-17 AC: C2PA SealChain wrap.
+            // When the orchestrator has run SealChainWrapper
+            // over the packet, `sealchain_receipt` carries the
+            // embedded C2PA manifest. We print a short
+            // summary: the assertion count and the
+            // mock/real flag. The full manifest is reachable
+            // via the JSON; this is the smoke summary that
+            // the demo judge sees.
+            match &packet.sealchain_receipt {
+                Some(receipt) => {
+                    let mock_flag = if receipt.mock { "mock" } else { "real" };
+                    let assertions = receipt
+                        .c2pa_manifest
+                        .get("assertions")
+                        .and_then(|a| a.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    println!(
+                        "  sealchain:     wrap={mock_flag}, c2pa_assertions={assertions}"
+                    );
+                }
+                None => {
+                    println!("  sealchain:     not wrapped (SealChain disabled or pre-C-10)");
+                }
+            }
+            // C-10 (G30) / C-17 AC: EU AI Act Art 49 mock
+            // registration id. Carried as a top-level field
+            // on the SealedPacket for fast lookup. The
+            // `themis-verify` smoke check prints it as a
+            // distinct line so a regulator can resolve it
+            // against the public registration directory.
+            match &packet.eu_registration_id {
+                Some(id) if !id.is_empty() => {
+                    println!("  eu_reg_id:     {id}");
+                }
+                _ => {
+                    println!("  eu_reg_id:     not populated");
+                }
+            }
             ExitCode::SUCCESS
         }
         Err(e) => {

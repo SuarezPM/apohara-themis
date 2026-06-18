@@ -45,6 +45,50 @@ jobs:
       - run: cargo deny check licenses
       - run: cargo deny check advisories
 
+  # AC17 — supply-chain defense (ASI04). Runs in addition to
+  # `deny` (which uses cargo-deny's curated advisory DB). `cargo
+  # audit` consults the RustSec Advisory Database directly and
+  # pins its action to a known-good commit. Network access
+  # required but the action caches the DB so subsequent runs
+  # are fast. Runs on PRs from forks (no secret dependency).
+  cargo-audit:
+    name: cargo audit (RustSec advisories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: rustsec/audit-action@17a69828de95e6c54e64b8dacde37b86ed00860d # v0.21.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --deny warnings
+
+  # AC17 — formatting drift gate. The legacy `fmt` job above
+  # only checks the default workspace member; `--all` walks
+  # every member crate so a drift in any of them trips CI.
+  cargo-fmt:
+    name: cargo fmt --all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  # AC17 — single-binary release-size cap (30 MB per critic
+  # amendment). Builds release binaries and runs the gate
+  # script. No secret dependency; runs on PRs from forks.
+  binary-size:
+    name: binary size ≤ 30 MB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Build release binaries
+        run: cargo build --release --workspace --bins
+      - name: Enforce 30 MB cap
+        run: bash scripts/check-binary-size.sh
+
   ac11:
     name: AC11 guard (no apohara_* imports)
     runs-on: ubuntu-latest
@@ -80,7 +124,7 @@ jobs:
     name: live deploy smoke test
     runs-on: ubuntu-latest
     # Only on main, after the rest of CI passes.
-    needs: [fmt, clippy, deny, ac11, test]
+    needs: [fmt, clippy, deny, cargo-audit, cargo-fmt, binary-size, ac11, test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
