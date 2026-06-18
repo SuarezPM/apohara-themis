@@ -475,10 +475,7 @@ mod tests {
             .expect("verify must not error");
         assert!(verified, "verify_receipt must return Ok(true)");
         // The receipt must carry a `mock` flag (true or false).
-        assert!(
-            receipt.mock || !receipt.mock,
-            "receipt must carry the mock flag"
-        );
+        let _ = receipt.mock; // tautology-by-design: the field exists and round-trips through serde
     }
 
     #[test]

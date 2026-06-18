@@ -497,8 +497,9 @@ impl Orchestrator {
         // SignerService is the same one TenantRegistry used to
         // derive `public_key_hex` at startup, so the sig verifies
         // against the embedded pubkey.
-        let signer =
-            themis_evidence::signer::SignerService::for_tenant(tenant_id).unwrap_or_else(|e| {
+        let signer = themis_evidence::signer::SignerService::for_tenant(tenant_id)
+            .unwrap_or_else(|e| {
+                eprintln!("SignerService::for_tenant({tenant_id}) failed at sign time: {e}");
                 panic!("SignerService::for_tenant({tenant_id}) failed at sign time: {e}")
             });
         let canonical_payload = packet
