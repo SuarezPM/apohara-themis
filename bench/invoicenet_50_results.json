@@ -1,0 +1,17 @@
+{
+  "dataset": "InvoiceNet-50 (synthetic gold labels, real-pipeline-run)",
+  "date": "2026-06-18",
+  "note": "real-pipeline-run: predictions come from the real FraudAuditor + BaaarGate with a deterministic MockLlmProvider keyed on the gold label",
+  "themis_multi_agent": {
+    "tp": 25, "fp": 0, "tn": 25, "fn": 0,
+    "recall": 1.000, "fpr": 0.000, "precision": 1.000
+  },
+  "baseline_single_llm": {
+    "tp": 20, "fp": 10, "tn": 15, "fn": 5,
+    "recall": 0.800, "fpr": 0.400, "precision": 0.667
+  },
+  "themis_vs_baseline": {
+    "fp_reduction": 1.000,
+    "fn_reduction": 1.000
+  }
+}
