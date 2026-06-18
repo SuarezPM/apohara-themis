@@ -19,6 +19,9 @@
 //!   `demo_narrator.rs`.
 //! * **`baaar.rs`** — the kill-switch (Fraud Auditor hosts it but the
 //!   logic is in its own module so it can be tested in isolation).
+//! * **`honesty_auditor.rs`** — the 6th agent (deterministic, pure
+//!   regex over-claim detector). See the module doc for the design
+//!   rationale; Band-room wiring lands in a follow-up.
 
 #![warn(missing_docs)]
 
@@ -34,6 +37,7 @@ pub mod demo_narrator;
 pub mod extractor;
 pub mod fraud_auditor;
 pub mod gaap_classifier;
+pub mod honesty_auditor;
 pub mod llm;
 pub mod po_matcher;
 pub mod provenance_signer;
