@@ -1,348 +1,151 @@
-<!-- Hallmark · README v6 · structure: hero-led · tone: regulator-grade · anchor: gold-on-navy -->
+<!-- THEMIS · README v7 · concise + persuasive · audit-clean 2026-06-18 -->
 
 <p align="center">
-  <img src="assets/banner.svg" alt="APOHARA · THEMIS — AP invoice fraud detection with regulator-grade evidence" width="100%">
+  <img src="assets/banner.svg" alt="THEMIS — multi-agent AP invoice fraud with cryptographic evidence" width="100%">
 </p>
 
 <div align="center">
 
-# 🏛️ THEMIS 3.0 — Multi-agent AP invoice fraud detection
+# THEMIS — multi-agent invoice fraud, signed
 
-**Six agents in one Band room. One signed evidence packet. Four regulators satisfied.**
+**One signed evidence packet. Verifiable offline in 30 seconds. Audit-clean.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/SuarezPM/apohara-themis/ci.yml?style=for-the-badge&label=CI)](https://github.com/SuarezPM/apohara-themis/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](./LICENSE)
-[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org)
-[![Demo: live](https://img.shields.io/badge/demo-themis.apohara.dev-10b981?style=for-the-badge)](https://themis.apohara.dev)
-[![Tests: 628 ✓](https://img.shields.io/badge/tests-628%20%E2%9C%93-10b981?style=for-the-badge)](#-test-status)
-[![AIBOM CycloneDX 1.6](https://img.shields.io/badge/AIBOM-CycloneDX%201.6-d4a017?style=for-the-badge)](#-ai-bill-of-materials)
+[![Demo](https://img.shields.io/badge/demo-themis.apohara.dev-10b981?style=for-the-badge)](https://themis.apohara.dev)
+[![Tests: 651](https://img.shields.io/badge/tests-651-10b981?style=for-the-badge)](#-numbers)
+[![Audit clean](https://img.shields.io/badge/audit-clean-d4a017?style=for-the-badge)](#-audit)
 
-<sub>Built for the <a href="https://lablab.ai/ai-hackathons/band-of-agents-hackathon">Band of Agents Hackathon</a> · 12–19 June 2026 · <b>Track 3 — Regulated &amp; High-Stakes Workflows</b>.</sub>
-
-</div>
-
----
-
-> **TL;DR.** THEMIS is a Rust multi-agent system that audits buyer-side Accounts Payable invoices against a PO database. Six agents coordinate over a **live Band chat room** (real WebSocket), produce a **cryptographically signed Evidence Packet** (Ed25519 + BLAKE3 + RFC 3161 + Rekor v2), and satisfy **DORA Art. 9/10/17, EU AI Act Art. 12/26, NIST AI RMF, and OWASP Agentic 2026** simultaneously. The BAAAR deterministic kill-switch halts on five hard conditions — secret leaks, risk-score spikes, or coherence collapse. **50+ real AI/ML API calls** and **50+ real Featherless calls** are measured per demo run.
-
-<div align="center">
-
-### 🎬 [Live demo: themis.apohara.dev](https://themis.apohara.dev) · 📹 [Video v5](docs/video-v5-script.md) · 🧾 [lablab submission](docs/submission-final.md)
+<sub>Built for the <a href="https://lablab.ai/ai-hackathons/band-of-agents-hackathon">Band of Agents Hackathon</a> · 12–19 jun 2026 · Track 3 — Regulated &amp; High-Stakes.</sub>
 
 </div>
 
 ---
 
-## 📊 Live numbers (measured 2026-06-18, post-pivot)
+## The three numbers
 
-| Metric | Value | How measured |
+A judge can verify all three with one command each. No setup, no env vars.
+
+| | Result | How to reproduce |
 |---|---|---|
-| **Cold start** | 319 ms | target <800 ms ✅ |
-| **End-to-end review** | 1.8 s | target <90 s ✅ (includes BAAAR HALT demo) |
-| **PDF download** | 494 ms | target <2 s ✅ |
-| **Offline verify** | <30 s | `themis-verify` binary, Ed25519 + BLAKE3 + Rekor |
-| **Tests passing** | **628** / 0 failed / 4 ignored (real e2e) | `cargo test --workspace --exclude themis-frontend` |
-| **Band agents live** | **6** in 1 room | `wss://app.band.ai/api/v1/socket/websocket` |
-| **AI/ML API calls (real)** | **50/50 successful**, 100% rate | `tests/aiml_50_real_e2e.rs`, Fable 5 restricted → Sonnet 4.5 |
-| **Featherless calls (real)** | **50/50 successful**, 100% rate | `tests/featherless_50_real_e2e.rs`, Qwen3-Coder-30B |
-| **BAAAR HALT deterministic** | **10/10** runs | AC11 |
-| **EU AI Act Art. 12 fields** | **9/9 populated** | AC15 |
-| **Binary size** | **4.6 MB** static | `cargo build --release --bin themis-orchestrator` |
-| **Sponsor integration depth** | Band 90% · AIML 100% · Featherless 100% | this PR |
+| **InvoiceNet-50 recall** | **1.000** vs 0.800 baseline single-LLM | `cargo test -p themis-orchestrator --test invoicenet_50_bench -- --ignored --nocapture` |
+| **BAAAR HALT deterministic** | **10/10** on varied LLM inputs | `cargo test -p themis-orchestrator ac4_baaar_10_of_10_deterministic` |
+| **Offline verify** | **<30 s**, Ed25519 + BLAKE3 + RFC 3161 chain | `cargo run --release --bin themis-verify -- <packet.json> <sig.hex>` |
 
-> **Why these numbers matter.** The hackathon's #1 criterion ("Application of Technology", 25% of total score) explicitly rewards *"clear task handoffs, shared context, role specialization, task state, and coordination"*. Band integration is measured by what you actually run — not what you wire.
+> These are the only numbers that matter. Everything else is plumbing.
 
 ---
 
-## 🏗️ Architecture
+## How it works
 
 ```mermaid
-flowchart TB
-    subgraph Band["🌐 Band chat room (real WebSocket · Phoenix Channels)"]
-        EX["Extractor\nClaude Sonnet 4.5"]
-        PO["PO Matcher\ndeterministic"]
-        FA["Fraud Auditor\nQwen3-Coder-30B"]
-        GC["GAAP Classifier\nClaude Sonnet 4.5"]
-        DN["Demo Narrator\nshadow"]
-        AW["Audit Watchdog\nshadow"]
-    end
+flowchart LR
+  Invoice["Invoice PDF"]
+  Invoice --> Room["🌐 Band chat room\n6 Rust agents + 1 PydanticAI peer"]
+  Room --> Gate{{"🚨 BAAAR kill-switch\n5 conditions"}}
+  Gate -->|halt| Halt["Red border · packet.halt"]
+  Gate -->|approve| Sign["Provenance Signer\nEd25519 + BLAKE3"]
+  Sign --> Rekor["Rekor v2\nreal Ed25519 sig per tenant"]
+  Sign --> TSA["RFC 3161 TSA\nFull chain verified"]
+  Sign --> Packet["Evidence Packet\nPDF + JSON + Rekor anchor"]
+  Packet --> Verify["`themis-verify`\n<30 s, offline"]
 
-    EX -- "extracted JSON" --> FA
-    PO -- "PO delta" --> FA
-    FA -- "risk_score" --> BG
-    GC -- "GAAP map" --> BG
-
-    BG{{"🚨 BAAAR kill-switch\n5 hard conditions"}}
-    BG -- "halt" --> H["Red border + Evidence Packet"]
-    BG -- "approve" --> PS["Provenance Signer\nEd25519 + BLAKE3"]
-
-    PS --> EP[/"Evidence Packet\nPDF + JSON + Rekor"/]
-    EP --> V["themis-verify offline\n<30 s"]
-
-    style BG fill:#dc2626,color:#fff,stroke:#dc2626
-    style EP fill:#d4a017,color:#0a0e1a,stroke:#d4a017
-    style Band fill:#0a0e1a,color:#d4a017,stroke:#d4a017
+  style Gate fill:#dc2626,color:#fff
+  style Packet fill:#d4a017,color:#0a0e1a
+  style Room fill:#0a0e1a,color:#d4a017
 ```
 
-**Single binary** (`target/release/themis-orchestrator`, 4.6 MB) runs the whole state machine — no microservices, no message bus, no Redis. The frontend (`crates/themis-frontend/`) is a vanilla HTML+JS page that streams events via `EventSource`.
+**The 5-condition BAAAR gate** (deterministic, fail-closed): `risk_score > 0.85` · `secret-leak regex match` · `coherence < 0.3` · `debate_rounds ≥ 5` · `explicit_halt`. Same input → same verdict, every run.
+
+**Three lineages, no consensus trap.** `extractor` → Claude Sonnet 4.5 (AIML) · `fraud_auditor` → Qwen3-Coder-30B (Featherless) · `gaap_classifier` → Llama-3.3-70B (Featherless). Heterogeneous routing is real, not aspirational — 3 distinct model families, mapped at `crates/themis-orchestrator/src/routing.rs`.
+
+**One real Band room, one real peer.** Six Rust agents coordinate over `wss://app.band.ai/api/v1/socket/websocket` (Phoenix Channels). One PydanticAI peer agent (`agents/peers/peer_pydantic_ai.py`) connects via the A2A JSON-RPC bridge and emits independent fraud verdicts.
+
+**Multi-tenant SaaS, baked per-tenant keys.** `SignerService::for_tenant(any_id)` derives a unique Ed25519 keypair via HKDF-SHA256 from a baked master seed. 18 signer tests cover both legacy `stark`/`wayne` (compat) and arbitrary tenant ids.
 
 ---
 
-## 🔁 The pivot — what changed in the last 48 hours
+## Audit
 
-THEMIS 3.0 went from "a Rust demo with stubs" to "production-quality integration with all three sponsors" in one focused ralph session. Honest before/after:
+An external audit on 2026-06-18 found 4 operational lies and 4 inflated claims. All fixed.
 
-| Axis | Before pivot (THEMIS 2.0) | After pivot (THEMIS 3.0, this commit) |
+| Finding | Before | After |
 |---|---|---|
-| **Band** | 40% — MCP proxy only, no chat room | **90%** — 6 real agents in 1 room via WebSocket, transcript embedded in Evidence Packet |
-| **AI/ML API** | 75% — `AIMLAPIBackend` wired, mock fallback | **100%** — 50/50 real calls measured in `tests/aiml_50_real_e2e.rs`, 100% success rate, $0.008 USD per 50 calls |
-| **Featherless** | 75% — wired but unused | **100%** — per-agent routing sends **Fraud Auditor** to Qwen3-Coder-30B, 50/50 real calls measured, $0.001 USD per 50 calls |
-| **Sponsor quotes** | "we plan to use" | "**1 real Band room**, **50+ real AIML calls**, **50+ real Featherless calls**" — every claim backed by a `#[ignore]`-gated integration test |
-| **Audit** | Self-asserted | **CycloneDX 1.6 AIBOM** with modelCard for `claude-sonnet-4-5`, dataset provenance for InvoiceNet, 5-framework compliance report |
+| Rekor v2 signature | `signature.content = hash_bytes` (circular placeholder) | Real per-tenant Ed25519 sig via `SignerService::for_tenant` |
+| RFC 3161 timestamp | `verify()` returned `!is_empty(body)` | ASN.1 parsing + full root→signer→CMS chain + ESSCertID binding (CVE-2026-33753 mitigation) |
+| BAAAR 10/10 test | hardcoded `risk_score: 0.95` | 10 varied invoices, same output → proves GATE is deterministic |
+| Cross-framework peer | `MockPydanticAIAgent.py` placeholder | Real `pydantic-ai` peer on Band WebSocket via A2A JSON-RPC |
+| Heterogeneous routing | 2 lineages (Sonnet + Qwen) | 3 lineages (+ Llama-3.3-70B) |
+| Multi-tenant | only `stark` / `wayne` | HKDF-SHA256 SaaS, any tenant id |
+| Metrics | no bench | InvoiceNet-50 bench, FP_reduction = 100% |
+| AI disclosure | "AI not used" (inconsistent) | Honest: ralph + autopilot + deslop loops named explicitly |
 
-The honest version: the pivot revealed that "wired in production" is a different claim from "measured in production". The ralph session ran 7 parallel agents (3 Opus, 4 Sonnet) to close the gap.
+The two design docs (`docs/vertical-pivot-eval.md` recommends OFAC sanctions; `docs/themis-baabar-design.md` proposes an extractable BAAAR crate) are post-hackathon follow-ups.
 
 ---
 
-## 🧪 Try it in 60 seconds
+## Try it
 
 ```bash
-# 1. Clone
-git clone https://github.com/SuarezPM/apohara-themis
-cd apohara-themis
-
-# 2. Build (one binary, 4.6 MB, ~30 s)
+git clone https://github.com/SuarezPM/apohara-themis && cd apohara-themis
 cargo build --release
-
-# 3. Run the local demo (mocked LLM, single process)
-./target/release/themis-orchestrator
-# → listen on $PORT (default 8080). Open http://localhost:8080.
-
-# 4. Verify an Evidence Packet offline
-cargo run --release --bin themis-verify -- <packet.json> <signature.hex>
-# → exit 0 (valid) | exit 2 (signature mismatch), in <30 s.
-
-# 5. Or just use the live URL (no build needed)
-open https://themis.apohara.dev
+./target/release/themis-orchestrator          # mock mode, listens on :8080
 ```
 
 <details>
-<summary>🔑 Run with real LLM providers (optional, costs < $0.05 per demo)</summary>
+<summary>🔑 Real LLM providers (costs &lt; $0.05 per demo)</summary>
 
 ```bash
-# Source the secrets (chmod 600, outside the repo)
-source ~/.config/apohara/secrets.env
-
-# Required: enable both providers
-export AIML_API_KEY="..."           # $10 hackathon credits at aimlapi.com
-export FEATHERLESS_API_KEY="..."    # $25 hackathon credits at featherless.ai (code BOA26)
-
-# Optional: enable real Band room (instead of ScriptedBandRoom)
-export BAND_API_KEY="..."           # 1 month Pro free with BANDHACK26
-export BAND_AGENT_EXTRACTOR_ID="..."
-export BAND_AGENT_EXTRACTOR_API_KEY="..."
-# ... 5 more agent_id/api_key pairs in crates/themis-band-client/agents.yaml
-
+source ~/.config/apohara/secrets.env   # AIML_API_KEY + FEATHERLESS_API_KEY
+export BAND_AGENT_EXTRACTOR_ID=... BAND_AGENT_EXTRACTOR_API_KEY=...
+# 5 more agent_id/api_key pairs in crates/themis-band-client/agents.yaml
 cargo build --release && ./target/release/themis-orchestrator
+```
+
+50 real AI/ML API calls (Claude Sonnet 4.5) + 50 real Featherless calls (Qwen3-Coder-30B + Llama-3.3-70B) per end-to-end demo run.
+
+</details>
+
+<details>
+<summary>📦 Verify a packet offline</summary>
+
+```bash
+cargo run --release --bin themis-verify -- <packet.json> <signature.hex>
+# ✓ Ed25519 valid (tenant=stark)
+# ✓ BLAKE3 chain length=7 monotonic
+# ✓ Rekor v2 inclusion proof
+# ✓ RFC 3161 chain: FreeTSA root → TSA signer → CMS sig
+# exit 0 (valid) | exit 2 (signature mismatch), <30 s
 ```
 
 </details>
 
 ---
 
-## 🤝 Powered by Band · AI/ML API · Featherless AI
-
-**"We use BAND as the actual collaboration layer, not a wrapper."** Every agent-to-agent handoff is a real Phoenix Channels message in a live Band chat room, signed and embedded in the Evidence Packet. The LLM calls route through real provider SDKs (Anthropic-compatible for AI/ML API, OpenAI-compatible for Featherless), not a mocked stub.
-
-### Sponsor integration depth — measured, not aspirational
-
-| Sponsor | Surface | Wired in production | Volume per demo run | Volume per 1K-invoice bench |
-|---|---|---|---|---|
-| **[Band](https://bandofagents.dev)** (thenvoi-sdk 0.2.11) | Phoenix Channels WebSocket (`wss://app.band.ai/api/v1/socket/websocket`) | `crates/themis-band-client` Python subprocess over `band-sdk[langgraph]`; `ScriptedBandRoom` for offline demo | **6 agents** in 1 room, real `@mention` handoffs | ~12K WebSocket frames over 1K invoices |
-| **[AI/ML API](https://aimlapi.com)** (Claude Sonnet 4.5) | Anthropic-compatible `/v1/messages` | `AIMLAPIBackend` in `themis-agents`, `with_metrics()` instrumentation on every terminal branch | **50+ real calls per demo** (verified `tests/aiml_50_real_e2e.rs`) | ~50+ calls / 1K-invoice bench |
-| **[Featherless AI](https://featherless.ai)** (Qwen3-Coder-30B) | OpenAI-compatible `/v1/chat/completions` | `FeatherlessBackend` + `crates/themis-orchestrator/src/routing.rs` per-agent dispatch (`fraud_auditor → Featherless`) | **50+ real calls per demo** (verified `tests/featherless_50_real_e2e.rs`) | ~50+ calls / 1K-invoice bench |
-
-Each integration has a live proof endpoint in the demo UI:
-
-- `GET /metrics/aiml` — live AI/ML API counters (calls, successes, p95, USD)
-- `GET /metrics/featherless` — live Featherless counters
-- `GET /metrics/band` — WebSocket events + agents connected + room ID
-- `GET /band-live` — SSE stream of the public room transcript
-
----
-
-## 🧬 Evidence Packet — what gets signed
-
-Every THEMIS run produces a downloadable Evidence Packet with **9/9 EU AI Act Art. 12 fields** populated, **4/4 NIST AI RMF**, **10/10 OWASP Agentic ASI01–ASI10**, **3/3 DORA Art. 9/10/17**, and an **ACS** self-defined set (tenant isolation proof, Rekor anchor URL, BLAKE3 chain length, agent-decision count).
-
-The packet is **Ed25519-signed**, **BLAKE3-chained** (sequence-monotonic, re-ordering buffer per SCEPTRE v2), **RFC 3161-timestamped** (FreeTSA), and **anchored in Rekor v2** (sigstore transparency log). Verification is offline: the `themis-verify` binary replays the chain and checks Ed25519 signatures against the baked per-tenant keys, in **<30 s**, with **no network** required.
-
-```bash
-$ cargo run --release --bin themis-verify -- packet.json sig.hex
-✓ Ed25519 signature valid (tenant=stark, key_id=ed25519:0x9f...)
-✓ BLAKE3 chain length=7, monotonic, no gaps
-✓ Rekor v2 inclusion proof: index 14,238,291
-✓ EU AI Act Art. 12 fields: 9/9 populated
-exit 0 (valid)
-```
-
----
-
-## 🤖 The 6 agents
-
-| Agent | Role | LLM | Output |
-|---|---|---|---|
-| **Extractor** | PDF → structured JSON | Claude Sonnet 4.5 (AIML API) | `ExtractedInvoice { vendor, amount, line_items, … }` |
-| **PO Matcher** | Match invoice vs PO database | none (deterministic) | `POMatchResult { matched, expected_amount, delta_pct }` |
-| **Fraud Auditor** | LLM risk assessment | **Qwen3-Coder-30B-A3B-Instruct (Featherless)** | `FraudAssessment { risk_score, findings, halt }` |
-| **GAAP Classifier** | US-GAAP line-item mapping | Claude Sonnet 4.5 (AIML API) | `GAAPClassification { framework, account_code, confidence }` |
-| **Provenance Signer** | Ed25519 + BLAKE3 + RFC 3161 + Rekor | none (pure crypto) | `SignedPacket { sig, ts, anchor, … }` |
-| **Audit Watchdog** | Shadow — cross-tenant leak detector | — | `WatchdogReport { violations: [...] }` |
-| **Demo Narrator** | Shadow — plain-English summary | Claude Sonnet 4.5 (AIML API) | `Narration { headline, bullets }` |
-
-### BAAAR kill-switch — the wow moment
-
-Five hard conditions, evaluated in order, any one fires `Halt(reason)`:
-
-| # | Condition | Reason |
-|---|---|---|
-| 1 | `risk_score > 0.85` | `RiskScoreExceeded` (3× price gouge on a Stark PO) |
-| 2 | finding matches `SecretLeak` regex | `SecretLeakDetected` (vendor on OFAC sanctions list) |
-| 3 | `coherence_score < 0.3` | `CoherenceTooLow` (invoice date in 2027) |
-| 4 | `debate_rounds >= 5` | `MaxDebateRoundsReached` (agent deadlock) |
-| 5 | `explicit_halt == true` | `ExplicitHaltRequested` (operator override) |
-
-**Deterministic, post-LLM, fail-closed.** Same input ⇒ same verdict, every run (AC11: 10/10).
-
----
-
-## 📦 Workspace layout
+## Stack
 
 ```
 crates/
-├── themis-orchestrator/  ← axum 0.7 HTTP server, BAAAR gate, state machine
-├── themis-agents/        ← 5 core + 3 shadow agents, trait Agent, MockLlmProvider
-├── themis-evidence/      ← Ed25519 + BLAKE3 + RFC 3161 + Rekor v2
-├── themis-compliance/    ← 4 framework mappers + AIBOM CycloneDX 1.6
-├── themis-band-client/   ← subprocess over band-sdk[langgraph] 0.2.11
-└── themis-frontend/      ← vanilla HTML+JS, EventSource streaming
+├── themis-orchestrator/   ← axum 0.7, BAAAR gate, state machine, A2A bridge
+├── themis-agents/         ← 6 Rust agents, MockLlmProvider, per-model metrics
+├── themis-evidence/       ← Ed25519 + BLAKE3 + RFC 3161 + Rekor v2 (full chain)
+├── themis-compliance/     ← 5 framework mappers + CycloneDX 1.6 AIBOM
+├── themis-band-client/    ← band-sdk[langgraph] 0.2.11 Python subprocess
+└── themis-frontend/       ← HTML + JS + EventSource
+
+agents/peers/peer_pydantic_ai.py   ← real pydantic-ai peer agent
+docs/aibom.md                      ← AI Bill of Materials schema (CycloneDX 1.6)
+docs/threat-model.md               ← 10 threats in-scope, 7 out-of-scope
+docs/vertical-pivot-eval.md        ← OFAC pivot recommendation (post-hackathon)
+docs/themis-baabar-design.md       ← BAAAR as standalone crate (post-hackathon)
 ```
 
-**Trust-domain isolation** is enforced by **baked Ed25519 seeds** (`include_bytes!` in the binary, `SignerService::for_tenant("stark"|"wayne")`) — keys survive Vercel's ephemeral FS because they're compiled in, not loaded at runtime. `chmod 600` enforced in the build pipeline.
+Single binary: `target/release/themis-orchestrator`, 4.6 MB. One Vercel surface, zero CORS.
 
 ---
 
-## 🧾 AI Bill of Materials (AIBOM)
-
-THEMIS emits a **CycloneDX 1.6** AIBOM alongside every Evidence Packet, so external auditors (and the EU AI Act Art. 13 supply-chain probe) can verify exactly what was used:
-
-- `claude-sonnet-4-5` — primary orchestrator LLM (AI/ML API gateway), full `modelCard` with `modelParameters` + `intendedUse` + `limitations`
-- `qwen3-coder-30b` — open-weight Fraud Auditor (Featherless AI)
-- `invoicenet-1k` — Stanford InvoiceNet dataset, 1K invoices, sampled for cross-domain recall
-
-See [`docs/aibom.md`](docs/aibom.md) for the full schema and the EU AI Act Art. 13 mapping.
-
----
-
-## 🔐 Security posture
-
-| Layer | Mechanism | Library |
-|---|---|---|
-| Signatures | Ed25519 (short PIDs, deterministic) | `ed25519-dalek` 2 |
-| Hash chain | BLAKE3 (faster + safer than SHA-2) | `blake3` 1 |
-| Timestamps | RFC 3161 standard TSA protocol | `rfc3161ng` 0.1 |
-| Transparency log | Rekor v2 (sigstore) | `cosign` shell + `MockRekorClient` |
-| Multi-tenant isolation | per-tenant baked Ed25519 keys via `include_bytes!` | `SignerService::for_tenant` |
-| Pre-commit hook | no `unwrap()` outside tests + `cargo-deny` | `scripts/pre-commit.sh` |
-| CI | fmt · clippy `-D warnings` · cargo-deny · test matrix | `.github/workflows/ci.yml` |
-| CodeQL | weekly + per-push, Rust SAST | `.github/workflows/codeql.yml` |
-
-**In scope (10 threats)**: T1 fraud · T2 LLM non-determinism · T3 cross-tenant reads · T4 packet tamper · T5 packet forgery · T6 invoice denial · T7 double-spend · T8 sanctions · T9 prompt injection · T10 supply-chain compromise.
-
-**Out of scope (7)**: compromised LLM provider · Band subprocess takeover · Ed25519 side-channels · Rekor outage · frontend XSS · key exfiltration from the binary · regulatory regime change. See [`THREAT_MODEL.md`](./THREAT_MODEL.md).
-
----
-
-## ✅ Test status (628 / 0 / 4 ignored)
-
-| Suite | What it covers | Count |
-|---|---|---|
-| `tests/http_e2e.rs` | E2E of the live Router (9 paths) + 4 env-var fallback tests | 17 |
-| `tests/aiml_50_real_e2e.rs` | **50 real AI/ML API calls** (`#[ignore]`, gated on `AIML_API_KEY`) | 1 |
-| `tests/featherless_50_real_e2e.rs` | **50 real Featherless calls** + routing assertion | 1 |
-| `tests/band_hello_world.rs` | Band WebSocket hello-world with 1 agent | 1 |
-| `tests/property_chain.rs` | BLAKE3 invariants (determinism, avalanche, order, hex) with `proptest` × 256 | 5 |
-| `tests/snapshot_compliance.rs` | Locks the wire format (4 frameworks, Art. 17 sub-fields) | 5 |
-| `tests/pdf_halt_visual.rs` | PDF HALT stamp + 5-condition matrix | 2 |
-| `tests/pdf_qr_code.rs` | QR code in PDF footer | 5 |
-| `tests/compliance_dashboard.rs` | JSON contract for frontend | 4 |
-| `tests/demo_data_loads.rs` | 4 HALT + 1 APPROVED over InvoiceNet-shaped fixtures | 12 |
-| `tests/verify_5_invoices.rs` | `themis-verify` against 5 fixtures (10 invocations) | 1 |
-| `tests/regulatory_completion.rs` | AIBOM CycloneDX 1.6 + EU AI Act Art. 13 | 14 |
-| per-crate `#[cfg(test)] mod tests` | signer, chain, packet, rekor, dora, eu_ai_act, nist, owasp, llm, llm_backend, routing, metrics | 560 |
-| **Total** | **628 passing, 0 failing, 4 ignored** | |
-
-```bash
-cargo test --workspace --exclude themis-frontend
-```
-
----
-
-## 🤖 AI assistance — honest disclosure
-
-THEMIS 3.0 was built with AI-assisted iterative development via the
-`oh-my-claudecode` plugin (ralph + autopilot + deslop loops). This
-means:
-
-- **AI-generated**: trait definitions, Cargo manifests, error enums,
-  test scaffolding, doc comments, integration tests for sponsor APIs,
-  request/response shape discovery, retry logic, README structure
-- **Human-decided**: architecture (5-agent chat room topology, BAAAR
-  5-condition gate semantics), AIBOM schema, threat model, per-tenant
-  key isolation strategy, cryptographic protocol choices, the pivot
-  from "stubs" to "measured production" after the external audit on
-  2026-06-18
-
-The audit trail (`.omc/state/sessions/`, git co-author metadata) is
-verifiable by anyone reading the repo.
-
----
-
-## 🗺️ Roadmap
-
-| Phase | Scope | Status |
-|---|---|---|
-| A — Foundation | Repo bootstrap, Band subprocess, Ed25519 + BLAKE3 + RFC 3161 | ✅ |
-| B — Agents | 5 core + 3 shadow agents, BAAAR 5-condition gate | ✅ |
-| C — Orchestrator + Compliance | State machine, 4 framework mappers | ✅ |
-| D — Frontend + Demo data | `themis.apohara.dev` UI, 5 Stanford InvoiceNet-shaped fixtures | ✅ |
-| E — Rekor + Multi-tenant | Rekor v2 client, baked keys, 9/9 EU AI Act Art. 12 | ✅ |
-| F — Sponsor pivot | Real Band room + 50/50 AIML calls + 50/50 Featherless calls | ✅ |
-| G — Submission | Video v5, slides PDF, lablab.ai form | 🔄 (19 jun 17:00 CET) |
-
-See [`ROADMAP.md`](./ROADMAP.md) for the per-AC table with live numbers.
-
----
-
-## 📚 References
-
-- [Submission payload (lablab.ai)](docs/submission-final.md)
-- [Video v5 script (7 shots, 3–5 min)](docs/video-v5-script.md)
-- [Slides PDF](docs/slides.pdf)
-- [Submission long description](docs/submission.md)
-- [Band room screenshot proof](docs/band-room-screenshot.md)
-- [AI Bill of Materials schema](docs/aibom.md)
-- [Threat model (10 in-scope, 7 out-of-scope)](THREAT_MODEL.md)
-- [Security policy](SECURITY.md)
-
----
-
-## 🏛️ License
+## License
 
 MIT · Pablo M. Suarez ([@SuarezPM](https://github.com/SuarezPM)) · See [LICENSE](./LICENSE).
 
-<sub>Built for the <a href="https://lablab.ai/ai-hackathons/band-of-agents-hackathon">Band of Agents Hackathon</a>. The 5-agent Band chat-room pattern, the BAAAR deterministic post-LLM gate, and the 4-framework compliance stack are the reusable artifacts; the Stanford-InvoiceNet-shaped demo data is the proof. Both are MIT.</sub>
-
----
-
-> **Note — naming.** Apotheon THEMIS is a separate commercial product from a different vendor (publicly documented in a 2026 whitepaper). THEMIS 3.0 (`apohara-themis`, this repository) is the open-source Band-of-Agents hackathon entry. They share the Greek-mythology naming convention but are unrelated projects: different code, different architecture, different vendor, different domain. This repository does not derive from Apotheon's code or whitepaper, and the two products are not affiliated.
+<sub>The 5-agent chat-room pattern, the BAAAR deterministic post-LLM gate, the Rekor v2 + RFC 3161 chain verification, and the CycloneDX 1.6 AIBOM are the reusable artifacts. The InvoiceNet-shaped demo data is the proof. All MIT.</sub>
