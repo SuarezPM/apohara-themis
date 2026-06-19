@@ -85,10 +85,11 @@ async def test_state_machine_runs_to_done_with_mocked_tools() -> None:
 
     assert result["state"] == "DONE", result
     transitions = result.get("transitions", [])
-    # 10 nodes = 10 transitions (one thought emit per node).
-    assert len(transitions) == 10, f"expected 10, got {len(transitions)}: {transitions}"
+    # 11 nodes = 11 transitions (one thought emit per node).
+    # S-07b added COMPLIANCE_ESCALATION between REDTEAM and EVIDENCE.
+    assert len(transitions) == 11, f"expected 11, got {len(transitions)}: {transitions}"
 
-    # Each transition should have come from one of the 10 states.
+    # Each transition should have come from one of the 11 states.
     seen = [t.get("from") for t in transitions]
     assert seen == list(ORCHESTRATOR_STATES), seen
 
@@ -112,7 +113,8 @@ async def test_state_machine_emits_thought_events_via_fake_tools() -> None:
     await sm.ainvoke(initial, {"configurable": {"thread_id": "t-2"}})
 
     # The fake records every send_event call.
-    assert len(tools.events_sent) == 10, tools.events_sent
+    # S-07b added COMPLIANCE_ESCALATION — total now 11.
+    assert len(tools.events_sent) == 11, tools.events_sent
     for evt in tools.events_sent:
         assert evt["message_type"] == "thought", evt
         assert evt["content"], evt

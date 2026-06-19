@@ -143,9 +143,6 @@
     state.byAgent.set(row.agent, prev);
     pushTranscript(row);
     renderCostPanel();
-
-    // HALT heuristic: any agent emits cost_usd > 0.85 with verdict
-    // "halt" — handled by the SSE stream's `halt` event, not cost.
   }
 
   // -------- SSE stream --------
