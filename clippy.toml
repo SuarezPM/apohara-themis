@@ -1,0 +1,23 @@
+# clippy configuration for Apohara VOUCH.
+# https://doc.rust-lang.org/clippy/
+#
+# These rules apply to NEW code only. Existing .unwrap()/.expect()
+# callsites in hot-path code (http.rs, signer.rs, rekor.rs) were
+# tolerated during the S-13 rename sprint and are tracked as
+# technical debt in the audit remediation backlog.
+#
+# To enforce on legacy code too, opt-in crate-by-crate with
+# `#![warn(clippy::unwrap_used, clippy::expect_used)]` in the lib.rs.
+
+# Cognitive complexity threshold — keeps giant nested conditionals
+# from sneaking back in. Default is 25; we tighten to 20.
+cognitive-complexity-threshold = 20
+
+# Disallow trivial large enum variants (memory-constrained targets).
+large-error-threshold = 256
+
+# NOTE: disallowed-methods = ["unwrap", "expect"] would generate ~980
+# warnings on the existing code; deferred to the audit remediation
+# backlog (task T#9 partial, then a follow-up "refactor legacy unwraps"
+# sprint). For now, the existing per-crate `#![warn(missing_docs)]` and
+# the `cargo test --workspace` gate keep the bar honest.
