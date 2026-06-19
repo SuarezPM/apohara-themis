@@ -13,7 +13,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/SuarezPM/apohara-vouch/ci.yml?style=for-the-badge&label=CI)](https://github.com/SuarezPM/apohara-vouch/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](./LICENSE)
 [![Demo](https://img.shields.io/badge/demo-vouch.apohara.dev-10b981?style=for-the-badge)](https://vouch.apohara.dev)
-[![Tests: 410](https://img.shields.io/badge/tests-410-10b981?style=for-the-badge)](#-numbers)
+[![Tests: 806](https://img.shields.io/badge/tests-806-10b981?style=for-the-badge)](#-numbers)
 [![Audit clean](https://img.shields.io/badge/audit-clean-d4a017?style=for-the-badge)](#-audit)
 
 <sub>Built for the <a href="https://lablab.ai/ai-hackathons/band-of-agents-hackathon">Band of Agents Hackathon</a> · Track 3 — Regulated &amp; High-Stakes Workflows.</sub>
