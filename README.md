@@ -30,7 +30,7 @@ A judge can verify all three with one command each. No setup, no env vars.
 |---|---|---|
 | **9-agent cross-framework court** | **9 agents** on one Band room (`vouch-procurement-court`) | `git check-ignore crates/themis-band-client/agent-config/agent_config.yaml` + `cat crates/themis-band-client/agent-config/agent_config.yaml` |
 | **Sponsor integration density** | **AI/ML API in 6 of 9 agents** · **Featherless in 3 of 9** · **Band as coordination layer** | `rg -c 'AIML_API_BASE\|FEATHERLESS_API_BASE' crates/vouch-agents/src/` |
-| **Offline verify** | **<30 s**, Ed25519 + BLAKE3 + RFC 3161 + C2PA + CycloneDX AIBOM full chain | `unshare -n -- bash -c './target/release/vouch-verify fixtures/sample_packet.json'` |
+| **Offline verify** | **<30 s**, Ed25519 + BLAKE3 + RFC 3161 + CycloneDX AIBOM full chain | `unshare -n -- bash -c './target/release/vouch-verify fixtures/sample_packet.json'` |
 
 > "9 agents" = 9 agents registered on `app.band.ai` as External Agents with distinct UUIDs + api_keys, plus a 10th local fallback Compliance Veto that fires when the cross-account WebSocket drops. See [`crates/themis-band-client/agent-config/agent_config.yaml`](crates/themis-band-client/agent-config/agent_config.yaml).
 
@@ -49,12 +49,12 @@ flowchart LR
   INT --> VR["VendorResearcher · LangGraph\nLlama-3.3-70B (Featherless)"]
   VR --> FR["FinanceRisk · Pydantic AI\nClaude Sonnet 4.6 (AI/ML API)"]
   FR --> LP["LegalPolicy · CrewAI\nQwen3-Coder-30B-A3B (Featherless)"]
-  LP --> RT["RedTeam · Anthropic SDK\nClaude Opus 4.7 (AI/ML API)"]
+  LP --> RT["RedTeam · Anthropic SDK\nClaude Opus 4.5 (AI/ML API)"]
   RT --> CV{{"🌐 ComplianceVeto\n2nd Band account · cross-org"}}
   CV --> ESC["COMPLIANCE_ESCALATION\ndeterministic 100/100"]
   ESC --> EC["EvidenceClerk · LangGraph\nDeepSeek-V3 (Featherless)"]
   EC --> AM["ApprovalManager · CrewAI\nClaude Sonnet 4.6 (AI/ML API)"]
-  EC --> Seal{{"🔒 Evidence Layer\nBLAKE3 + Ed25519 + RFC 3161 + C2PA"}}
+  EC --> Seal{{"🔒 Evidence Layer\nBLAKE3 + Ed25519 + RFC 3161 + CycloneDX AIBOM"}}
   Seal --> V["vouch-verify offline\n<30 s"]
 
   style CV fill:#dc2626,color:#fff
@@ -68,7 +68,7 @@ flowchart LR
 
 **Cross-account Compliance Veto.** The 9th agent runs on a **second Band account** (WarRoom pattern), holds binding veto power, and forces the case to `COMPLIANCE_ESCALATION` regardless of any other agent's verdict. A local fallback Compliance agent runs on the primary account and fires when the cross-account WebSocket drops — chaos harness verified 10/10 over 3-kill scenarios.
 
-**Offline-verifiable.** Every agent decision flows through the Rust Evidence Layer: BLAKE3 hash chain → Ed25519 per-tenant signature → RFC 3161 timestamp → C2PA manifest → CycloneDX 1.6 AIBOM. `vouch-verify` CLI confirms the packet end-to-end in <30s with no network access.
+**Offline-verifiable.** Every agent decision flows through the Rust Evidence Layer: BLAKE3 hash chain → Ed25519 per-tenant signature → RFC 3161 timestamp → CycloneDX 1.6 AIBOM. `vouch-verify` CLI confirms the packet end-to-end in <30s with no network access.
 
 ---
 
@@ -105,7 +105,7 @@ export BAND_AGENT_ORCHESTRATOR_ID=...  BAND_AGENT_ORCHESTRATOR_API_KEY=...
 cd crates/vouch-agents && .venv/bin/python -m orchestrator
 ```
 
-50+ real AI/ML API calls (gpt-5.4 + claude-haiku-4.5 + claude-sonnet-4.6 + claude-opus-4.7) and 30+ real Featherless calls (Llama-3.3-70B + Qwen3-Coder-30B-A3B + DeepSeek-V3) per end-to-end demo run.
+50+ real AI/ML API calls (gpt-5.4 + claude-haiku-4-5 + claude-sonnet-4-6 + claude-opus-4-5) and 30+ real Featherless calls (Llama-3.3-70B + Qwen3-Coder-30B-A3B + DeepSeek-V3) per end-to-end demo run.
 
 </details>
 
@@ -114,11 +114,10 @@ cd crates/vouch-agents && .venv/bin/python -m orchestrator
 
 ```bash
 unshare -n -- bash -c './target/release/vouch-verify fixtures/sample_packet.json'
-# ✓ Ed25519 valid (tenant=stark)
-# ✓ BLAKE3 chain length monotonic
-# ✓ RFC 3161 chain: FreeTSA root → TSA signer → CMS sig
-# ✓ EU AI Act Art. 12 ≥7/8 fields populated
-# ✓ C2PA manifest validates as `valid` against shipped c2patool
+# ok Ed25519 valid (tenant=stark)
+# ok BLAKE3 chain length monotonic
+# ok RFC 3161 chain: FreeTSA root → TSA signer → CMS sig
+# ok EU AI Act Art. 12 ≥7/8 fields populated
 # exit 0 (valid) | exit 2 (signature mismatch), <30 s
 ```
 
@@ -133,7 +132,7 @@ crates/
 ├── vouch-chain/           ← BLAKE3 hash chain (sequence-monotonic)
 ├── vouch-evidence/        ← Ed25519 per-tenant signing + RFC 3161 timestamp
 ├── vouch-gate/            ← BAAAR deterministic halt gate (5 conditions)
-├── vouch-receipt/         ← JSON Evidence Packet + C2PA-signed PDF
+├── vouch-receipt/         ← JSON Evidence Packet + offline-verifiable PDF
 ├── vouch-aibom/           ← CycloneDX 1.6 AIBOM (every agent + model)
 ├── vouch-compliance/      ← DORA / EU AI Act / NIST AI RMF / OWASP Agentic mappers
 ├── vouch-orchestrator/    ← POST /seal HTTP endpoint (Axum 0.7)
@@ -170,4 +169,4 @@ Single Rust binary: `target/release/vouch-verify` (~570 KB). Single Python packa
 
 MIT · Pablo M. Suarez ([@SuarezPM](https://github.com/SuarezPM)) · See [LICENSE](./LICENSE).
 
-<sub>The 9-agent cross-framework court pattern, the cross-account Compliance Veto, the BLAKE3 + Ed25519 + RFC 3161 + C2PA chain verification, and the CycloneDX 1.6 AIBOM are the reusable artifacts. The regulated procurement case is one instance; the same substrate covers hiring compliance, customer escalation, and vendor risk. All MIT.</sub>
+<sub>The 9-agent cross-framework court pattern, the cross-account Compliance Veto, the BLAKE3 + Ed25519 + RFC 3161 chain verification, and the CycloneDX 1.6 AIBOM are the reusable artifacts. The regulated procurement case is one instance; the same substrate covers hiring compliance, customer escalation, and vendor risk. All MIT.</sub>

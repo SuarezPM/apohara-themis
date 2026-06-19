@@ -21,7 +21,7 @@ Apohara VOUCH — Vouch for every agent decision.
 ## 2. Short Description (≤280 chars)
 
 ```
-Vouch for every agent decision. 9-agent cross-framework procurement court on Band (LangGraph + CrewAI + Pydantic AI + Anthropic SDK). AI/ML API + Featherless, Ed25519 + BLAKE3 + C2PA Evidence Layer, offline-verifiable with vouch-verify CLI. Track 3 — Regulated & High-Stakes.
+Vouch for every agent decision. 9-agent cross-framework procurement court on Band (LangGraph + CrewAI + Pydantic AI + Anthropic SDK). AI/ML API + Featherless, Ed25519 + BLAKE3 Evidence Layer, offline-verifiable with vouch-verify CLI. Track 3 — Regulated & High-Stakes.
 ```
 
 (278 characters)
@@ -64,7 +64,7 @@ cryptographically-sealed, offline-verifiable receipt.
 │  vouch-chain       — BLAKE3 hash chain over every agent decision             │
 │  vouch-evidence    — Ed25519 per-tenant signing + RFC 3161 timestamp         │
 │  vouch-gate        — BAAAR halt gate (5 deterministic conditions)            │
-│  vouch-receipt     — JSON Evidence Packet + C2PA-signed PDF                  │
+│  vouch-receipt     — JSON Evidence Packet + offline-verifiable PDF                  │
 │  vouch-aibom       — CycloneDX 1.6 AIBOM listing every agent + model lineage │
 │  vouch-compliance  — DORA / EU AI Act / NIST AI RMF / OWASP Agentic mappers  │
 │                                                                              │
@@ -124,9 +124,9 @@ per-model call breakdown.
 **Live demo.** <https://vouch.apohara.dev> opens a 3-panel UI: the Band
 room transcript on the left (auto-scroll, latest at bottom), the per-agent
 cost panel on the top-right (AI/ML API $ + Featherless $ per call),
-and the EU AI Act Art. 12 dashboard on the bottom-right (8/8 ✓ on every
+and the EU AI Act Art. 12 dashboard on the bottom-right (8/8 ok on every
 approved packet). Submit a procurement request; the 9 agents
-collaborate; the Evidence Packet downloads as a C2PA-signed PDF; the
+collaborate; the Evidence Packet downloads as an offline-verifiable PDF; the
 human types the approval code in the room; `vouched: true` closes the
 case. The demo runs cold-fetch in <800 ms and full review in <90 s.
 

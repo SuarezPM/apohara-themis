@@ -335,14 +335,14 @@ def agent_table():
 def art12_table():
     rows = [
         ["EU AI Act Art. 12 field", "Source", "Status"],
-        ["start_time", "RFC 3161 timestamp", "✓"],
-        ["end_time", "RFC 3161 timestamp", "✓"],
-        ["reference_database", "Band room id + chatroom_id", "✓"],
-        ["input_data", "ProcurementCase JSON envelope", "✓"],
-        ["natural_person_id", "Buyer + approver identifiers", "✓"],
-        ["decision_id", "case_id + sequence", "✓"],
-        ["policy_version", "vouch-compliance version", "✓"],
-        ["hash_chain_prev", "BLAKE3 prev_hash link", "✓"],
+        ["start_time", "RFC 3161 timestamp", "ok"],
+        ["end_time", "RFC 3161 timestamp", "ok"],
+        ["reference_database", "Band room id + chatroom_id", "ok"],
+        ["input_data", "ProcurementCase JSON envelope", "ok"],
+        ["natural_person_id", "Buyer + approver identifiers", "ok"],
+        ["decision_id", "case_id + sequence", "ok"],
+        ["policy_version", "vouch-compliance version", "ok"],
+        ["hash_chain_prev", "BLAKE3 prev_hash link", "ok"],
     ]
     t = Table(
         rows,
@@ -375,7 +375,7 @@ def evidence_layer_table():
         ["vouch-evidence", "Ed25519", "Per-tenant signing; per-entry signature"],
         ["vouch-evidence", "RFC 3161", "Trusted timestamp (FreeTSA), cert chain validated"],
         ["vouch-evidence", "Rekor v2", "Transparency log inclusion proof"],
-        ["vouch-receipt", "C2PA", "Signed PDF manifest, vendor-neutral provenance"],
+        ["vouch-receipt", "offline-verifiable PDF", "Signed PDF manifest, vendor-neutral provenance"],
         ["vouch-aibom", "CycloneDX 1.6", "AIBOM: every agent + every model lineage"],
         ["vouch-compliance", "DORA / EU AI Act / NIST AI RMF / OWASP Agentic", "4 framework mappers"],
         ["vouch-gate", "BAAAR (5 conditions)", "Deterministic post-LLM halt gate"],
@@ -529,7 +529,7 @@ def sponsor_stack_slide():
                     ],
                     [
                         "AI/ML API",
-                        "Multimodal reasoning for 5 of 9 agents × 4 models (GPT-5.4, Haiku 4.5, Sonnet 4.6, Opus 4.7)",
+                        "Multimodal reasoning for 5 of 9 agents × 4 models (GPT-5.4, Haiku 4.5, Sonnet 4.6, Opus 4.5)",
                     ],
                     [
                         "Featherless",
@@ -575,10 +575,10 @@ def orchestrator_slide():
                     ["RESEARCH", "@VendorResearcher resolves vendor profile (Llama-3.3-70B)"],
                     ["RISK", "@FinanceRiskAnalyst scores RiskScore (Claude Sonnet 4.6)"],
                     ["POLICY", "@LegalPolicyChecker cites statutes (Qwen3-Coder-30B)"],
-                    ["AUDIT", "@RedTeamAuditor adversarially audits (Claude Opus 4.7)"],
+                    ["AUDIT", "@RedTeamAuditor adversarially audits (Claude Opus 4.5)"],
                     ["REDTEAM", "@ComplianceVeto binding veto (Claude Haiku 4.5, 2nd account)"],
                     ["EVIDENCE", "@EvidenceClerk seals EvidencePacket (DeepSeek-V3)"],
-                    ["DECISION / DONE", "@ApprovalManager renders DecisionMemo + C2PA PDF + human sign-off"],
+                    ["DECISION / DONE", "@ApprovalManager renders DecisionMemo + offline-verifiable PDF PDF + human sign-off"],
                 ]
             ),
             Spacer(1, 0.1 * inch),
@@ -692,7 +692,7 @@ def demo_slide():
                     ],
                     [
                         "Bottom-right",
-                        "EU AI Act Art. 12 dashboard (8/8 ✓ on every approved packet)",
+                        "EU AI Act Art. 12 dashboard (8/8 ok on every approved packet)",
                     ],
                     [
                         "Form",
@@ -781,7 +781,7 @@ def main_track3_slide():
                     ],
                     [
                         "Evidence Layer",
-                        "Ed25519 + BLAKE3 + RFC 3161 + Rekor v2 + C2PA — 9/9 signed per packet",
+                        "Ed25519 + BLAKE3 + RFC 3161 + Rekor v2 + offline-verifiable PDF — 9/9 signed per packet",
                     ],
                     [
                         "Verifier",
@@ -832,7 +832,7 @@ def aimlapi_prize_slide():
                     ],
                     [
                         "@ApprovalManager",
-                        "claude-sonnet-4-6 — DecisionMemo + C2PA PDF + human sign-off gate",
+                        "claude-sonnet-4-6 — DecisionMemo + offline-verifiable PDF PDF + human sign-off gate",
                     ],
                     [
                         "@ComplianceVeto (2nd Band account)",

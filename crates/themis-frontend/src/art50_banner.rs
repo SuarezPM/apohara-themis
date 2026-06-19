@@ -15,7 +15,7 @@
 /// Mock EU AI Act database registration id. The EU database for
 /// Annex III high-risk AI systems opens 2027-12-02; until then
 /// THEMIS carries this placeholder id so downstream artefacts
-/// (Evidence Packet, C2PA manifest, compliance dashboard) can
+/// (Evidence Packet, offline-verifiable manifest, compliance dashboard) can
 /// embed a stable, audit-ready identifier. Once the database
 /// opens, swap this constant for the real EU-issued id.
 pub const EU_REGISTRATION_ID: &str = "EU-AI-ACT-2026-THEMIS-MOCK";
@@ -27,7 +27,7 @@ pub const AI_DISCLOSURE_BANNER_HTML: &str = r#"<div class="ai-disclosure" role="
   <span class="ai-disclosure__text">
     <strong>AI-Generated Content</strong> &mdash; This output was produced by an AI system subject to
     <a href="https://eur-lex.europa.eu/eli/reg/2024/1689/oj" target="_blank" rel="noopener">EU AI Act Art 50 (transparency)</a>.
-    C2PA-signed receipt available.
+    offline-verifiable receipt available.
     <span class="ai-disclosure__reg">EU AI Act registration: <code>EU-AI-ACT-2026-THEMIS-MOCK</code>
       <em>(registration activates 2027-12-02 when EU database opens for Annex III)</em></span>
   </span>
