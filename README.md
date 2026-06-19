@@ -170,3 +170,11 @@ Single Rust binary: `target/release/vouch-verify` (~570 KB). Single Python packa
 MIT · Pablo M. Suarez ([@SuarezPM](https://github.com/SuarezPM)) · See [LICENSE](./LICENSE).
 
 <sub>The 9-agent cross-framework court pattern, the cross-account Compliance Veto, the BLAKE3 + Ed25519 + RFC 3161 chain verification, and the CycloneDX 1.6 AIBOM are the reusable artifacts. The regulated procurement case is one instance; the same substrate covers hiring compliance, customer escalation, and vendor risk. All MIT.</sub>
+
+---
+
+## Community
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — how to add an agent, commit format, pre-commit checklist.
+- [SECURITY.md](./SECURITY.md) — vulnerability disclosure (do **not** file a public issue).
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) — Contributor Covenant 2.1.
