@@ -12,10 +12,13 @@ use printpdf::{
     Color, IndirectFontRef, Line, Mm, PdfDocumentReference, PdfLayerReference, Point, Polygon, Rgb,
 };
 
-/// Synthex-style dark palette.
+/// Synthex-style dark palette (default) + a print-friendly light
+/// variant on the same tokens. Both palettes share the same
+/// 11-token vocabulary so the render function can pick by theme.
 pub mod brand {
     use super::Rgb;
 
+    /// Dark theme tokens (default — for screen / web).
     pub const BG: (f64, f64, f64) = (0.020, 0.024, 0.031);
     pub const BG2: (f64, f64, f64) = (0.051, 0.067, 0.090);
     pub const INK: (f64, f64, f64) = (0.831, 0.843, 0.867);
@@ -24,6 +27,15 @@ pub mod brand {
     pub const GREEN: (f64, f64, f64) = (0.180, 0.800, 0.443);
     pub const RED: (f64, f64, f64) = (0.906, 0.298, 0.235);
     pub const BLUE: (f64, f64, f64) = (0.431, 0.659, 0.996);
+
+    /// Light theme tokens (for print / paper).
+    pub const PAPER: (f64, f64, f64) = (1.0, 1.0, 1.0);
+    pub const PAPER_ACCENT: (f64, f64, f64) = (0.965, 0.969, 0.957);
+    pub const INK_LIGHT: (f64, f64, f64) = (0.102, 0.102, 0.102);
+    pub const MUTED_LIGHT: (f64, f64, f64) = (0.380, 0.420, 0.460);
+    pub const LIME_DARK: (f64, f64, f64) = (0.180, 0.490, 0.043);
+    pub const GREEN_LIGHT: (f64, f64, f64) = (0.039, 0.431, 0.227);
+    pub const RED_LIGHT: (f64, f64, f64) = (0.701, 0.149, 0.118);
 
     /// Build a printpdf `Rgb` from a token triple.
     pub fn rgb(t: (f64, f64, f64)) -> Rgb {
@@ -54,23 +66,22 @@ pub struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    /// Build a single A4 portrait page with dark background.
-    /// We create TWO layers: a "Background" layer (which fills
-    /// the whole page dark) and the content layer (returned to
-    /// the caller). Because printpdf 0.7 emits layers in creation
-    /// order, the background is rendered first in the content
-    /// stream and the text is drawn on top.
+    /// Build a single A4 portrait page that is **printable**:
+    /// white paper background (so it prints on any printer), ink-
+    /// black text, dark-green/lime accent for the verdict. The
+    /// previous dark version didn't print well on standard
+    /// printers (they render near-black as muddy gray and the
+    /// lime as washed-out green) — this is the same content, in
+    /// a printer-friendly palette.
     pub fn add_a4_page(&self, layer_name: &str) -> Page {
         let (page_idx, _layer_idx) = self.doc.add_page(Mm(210.0), Mm(297.0), layer_name);
 
-        // Layer 1: background. Use a different name to avoid
-        // collision with the default "Layer 1" used by `PdfDocument::new`.
+        // Layer 1: white paper background.
         let bg_layer = self
             .doc
             .get_page(page_idx)
             .add_layer("Background");
-        // Fill the whole page with BG.
-        bg_layer.set_fill_color(Color::Rgb(brand::rgb(brand::BG)));
+        bg_layer.set_fill_color(Color::Rgb(brand::rgb(brand::PAPER)));
         let ring = vec![
             (Point::new(Mm(0.0), Mm(0.0)), false),
             (Point::new(Mm(210.0), Mm(0.0)), false),
@@ -84,19 +95,50 @@ impl<'a> Ctx<'a> {
         };
         bg_layer.add_polygon(poly);
 
-        // Layer 2 (the default "Layer 1"): the content layer the
-        // caller will use. We do this by adding ANOTHER layer to the
-        // same page — that puts the content layer AFTER the
-        // background layer in creation order, which means printpdf
-        // emits it after in the content stream, so the text is
-        // drawn on top of the dark background.
+        // Layer 2: content layer.
         let content_layer = self
             .doc
             .get_page(page_idx)
             .add_layer("Content");
-        // Default text color to INK (light) so text is visible on
-        // the dark background.
-        content_layer.set_fill_color(Color::Rgb(brand::rgb(brand::INK)));
+        content_layer.set_fill_color(Color::Rgb(brand::rgb(brand::INK_LIGHT)));
+        Page {
+            layer: content_layer,
+            cursor_y: 280.0,
+            line_h: 7.0,
+        }
+    }
+
+    /// Build a single A4 portrait page for print. White paper
+    /// background (so it prints on any printer), ink-black text,
+    /// navy/lime accent for the verdict. No dark theme.
+    pub fn add_a4_page_print(&self, layer_name: &str) -> Page {
+        let (page_idx, _layer_idx) = self.doc.add_page(Mm(210.0), Mm(297.0), layer_name);
+
+        // Background layer: white paper.
+        let bg_layer = self
+            .doc
+            .get_page(page_idx)
+            .add_layer("Background");
+        bg_layer.set_fill_color(Color::Rgb(brand::rgb(brand::PAPER)));
+        let ring = vec![
+            (Point::new(Mm(0.0), Mm(0.0)), false),
+            (Point::new(Mm(210.0), Mm(0.0)), false),
+            (Point::new(Mm(210.0), Mm(297.0)), false),
+            (Point::new(Mm(0.0), Mm(297.0)), false),
+        ];
+        let poly = Polygon {
+            rings: vec![ring],
+            mode: PaintMode::Fill,
+            winding_order: WindingOrder::NonZero,
+        };
+        bg_layer.add_polygon(poly);
+
+        // Content layer.
+        let content_layer = self
+            .doc
+            .get_page(page_idx)
+            .add_layer("Content");
+        content_layer.set_fill_color(Color::Rgb(brand::rgb(brand::INK_LIGHT)));
         Page {
             layer: content_layer,
             cursor_y: 280.0,
