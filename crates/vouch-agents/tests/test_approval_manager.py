@@ -35,6 +35,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import re
 import sys
 import threading
@@ -83,7 +84,7 @@ def _sample_art12() -> EuAiActArt12:
         end_time="2026-06-18T10:15:00+00:00",
         reference_database="stanford-invoicenet-50",
         input_data="PC-2026-0001",
-        natural_person_id="operator@apohara.dev",
+        natural_person_id=os.environ.get("VOUCH_OPERATOR_EMAIL", "test-operator@example.com"),
         decision_id="11111111-1111-1111-1111-111111111111",
         policy_version="apohara-vouch-1",
         hash_chain_prev="0" * 64,

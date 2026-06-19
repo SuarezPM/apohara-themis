@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use vouch_evidence::SealedPacket;
 
 use crate::{Art12Coverage, C2paManifest, EU_AI_ACT_ART12_FIELDS};
+use thiserror::Error;
 
 /// The 8-field EU AI Act Art. 12 envelope that wraps a
 /// sealed evidence packet. The HTTP `/seal` endpoint serializes
@@ -68,6 +69,19 @@ impl EvidencePacket {
     /// Build a packet with the 8 EU AI Act Art. 12 fields
     /// populated by default. All 8 fields populate when
     /// `sealed` is provided.
+    ///
+    /// `natural_person_id` (EU AI Act Art. 12 §4 — deployer
+    /// identity) is REQUIRED. Callers must pass either:
+    /// - the operator's email at the call site (preferred — read
+    ///   from the tenant registry or request context), or
+    /// - [`EvidencePacket::load_operator_email`] to read from
+    ///   the `VOUCH_OPERATOR_EMAIL` env var.
+    ///
+    /// Hardcoding the operator email was the original
+    /// implementation; it violated Art. 12 §4 (identity of the
+    /// actual deployer, not a placeholder). The audit (#867,
+    /// finding P1) flagged this; the fix makes the value
+    /// explicit at every call site.
     pub fn build(
         case_id: impl Into<String>,
         start_time: DateTime<Utc>,
@@ -77,6 +91,7 @@ impl EvidencePacket {
         decision_id: impl Into<String>,
         policy_version: impl Into<String>,
         hash_chain_prev: impl Into<String>,
+        natural_person_id: impl Into<String>,
         agent_outputs: Vec<AgentOutput>,
         sealed: Option<SealedPacket>,
     ) -> Self {
@@ -88,13 +103,64 @@ impl EvidencePacket {
             end_time,
             reference_database: reference_database.into(),
             input_data: input_data.into(),
-            natural_person_id: Some("operator@apohara.dev".to_string()),
+            natural_person_id: Some(natural_person_id.into()),
             decision_id: decision_id.into(),
             policy_version: policy_version.into(),
             hash_chain_prev: hash_chain_prev.into(),
             c2pa_manifest: None,
             sealed,
         }
+    }
+
+    /// Load the deployer / operator email from the
+    /// `VOUCH_OPERATOR_EMAIL` env var. Returns `Err` if unset —
+    /// we never fall back to a hardcoded value (audit #867
+    /// finding P1: a hardcoded operator email violates EU AI
+    /// Act Art. 12 §4 because the deployer field must reflect
+    /// the ACTUAL operator of the regulated AI system, not a
+    /// placeholder).
+    ///
+    /// Callers that want a builder that fills in the env var
+    /// for them should use [`build_with_env`] (added in the
+    /// same audit fix).
+    pub fn load_operator_email() -> Result<String, OperatorEmailError> {
+        match std::env::var("VOUCH_OPERATOR_EMAIL") {
+            Ok(s) if !s.trim().is_empty() => Ok(s),
+            Ok(_) => Err(OperatorEmailError::EmptyEnv),
+            Err(_) => Err(OperatorEmailError::UnsetEnv),
+        }
+    }
+
+    /// Convenience: build a packet with the operator email read
+    /// from `VOUCH_OPERATOR_EMAIL`. Returns Err if the env var
+    /// is unset or blank — the audit (#867) flagged the previous
+    /// hardcoded value as a regulatory blocker.
+    pub fn build_with_env(
+        case_id: impl Into<String>,
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
+        reference_database: impl Into<String>,
+        input_data: impl Into<String>,
+        decision_id: impl Into<String>,
+        policy_version: impl Into<String>,
+        hash_chain_prev: impl Into<String>,
+        agent_outputs: Vec<AgentOutput>,
+        sealed: Option<SealedPacket>,
+    ) -> Result<Self, OperatorEmailError> {
+        let operator = Self::load_operator_email()?;
+        Ok(Self::build(
+            case_id,
+            start_time,
+            end_time,
+            reference_database,
+            input_data,
+            decision_id,
+            policy_version,
+            hash_chain_prev,
+            operator,
+            agent_outputs,
+            sealed,
+        ))
     }
 
     /// Build the 8-field coverage report. AC-3.9: ≥7/8 must
@@ -142,6 +208,7 @@ mod tests {
             "00000000-0000-0000-0000-000000000001",
             "apohara-vouch-1",
             "0".repeat(64),
+            "operator@example.com",
             vec![AgentOutput {
                 agent_id: "fraud-auditor".into(),
                 verdict: "halt".into(),
@@ -198,4 +265,15 @@ mod tests {
         assert_eq!(populated, 7);
         assert!(Art12Coverage::is_compliant(&coverage));
     }
+}
+
+/// Error returned by `load_operator_email` when the env var
+/// is unset or blank. Maps to a 500 from the HTTP layer if
+/// the operator forgot to set up the deployer identity.
+#[derive(Debug, thiserror::Error)]
+pub enum OperatorEmailError {
+    #[error("VOUCH_OPERATOR_EMAIL env var is not set; cannot populate EU AI Act Art. 12 §4 deployer identity")]
+    UnsetEnv,
+    #[error("VOUCH_OPERATOR_EMAIL env var is set but blank; cannot populate EU AI Act Art. 12 §4 deployer identity")]
+    EmptyEnv,
 }

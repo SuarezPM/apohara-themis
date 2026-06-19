@@ -66,6 +66,7 @@ Implementation notes (deviations from the S-08 plan)
 from __future__ import annotations
 
 import json
+import os
 import logging
 import os
 import subprocess
@@ -370,7 +371,7 @@ def build_packet(state: EvidenceClerkState) -> EvidenceClerkState:
                 end_time=start,
                 reference_database=state.get("reference_database", "stanford-invoicenet-50"),
                 input_data=state.get("input_data", state["case_id"]),
-                natural_person_id="operator@apohara.dev",
+                natural_person_id=os.environ.get("VOUCH_OPERATOR_EMAIL", "test-operator@example.com"),
                 decision_id=decision_id,
                 policy_version=state.get("policy_version", "apohara-vouch-1"),
                 hash_chain_prev=prev_hash,

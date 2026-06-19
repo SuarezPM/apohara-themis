@@ -19,6 +19,7 @@ fn sample_packet() -> EvidencePacket {
         "00000000-0000-0000-0000-000000000001",
         "apohara-vouch-1",
         "0".repeat(64),
+        "operator@example.com",
         vec![AgentOutput {
             agent_id: "fraud-auditor".into(),
             verdict: "halt".into(),
@@ -99,6 +100,7 @@ fn empty_packet_fails_compliance() {
         "",
         "",
         "",
+        "operator@example.com",
         vec![],
         None,
     );

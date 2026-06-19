@@ -33,7 +33,7 @@ fn cli_verifies_synthetic_packet() {
         "hash_chain_link": null,
         "reference_database": "stanford-invoicenet-50",
         "policy_version": "apohara-vouch-1",
-        "natural_person_id": "operator@apohara.dev",
+        "natural_person_id": std::env::var("VOUCH_OPERATOR_EMAIL").unwrap_or_else(|_| "test-operator@example.com".to_string()),
         "decision_id": "00000000-0000-0000-0000-000000000001",
         "start_time": "2026-06-18T12:00:00Z",
         "end_time": "2026-06-18T12:01:30Z",
