@@ -33,9 +33,9 @@ fn nist_ai_rmf_populates_at_least_three_core_fields() {
     let map = m.map(&ep);
     let names: Vec<&str> = map.fields.iter().map(|(n, _)| *n).collect();
     // map + measure + govern (with non-empty decisions) = 3 of 4.
-    assert!(names.iter().any(|n| *n == "govern"));
-    assert!(names.iter().any(|n| *n == "map"));
-    assert!(names.iter().any(|n| *n == "measure"));
+    assert!(names.contains(&"govern"));
+    assert!(names.contains(&"map"));
+    assert!(names.contains(&"measure"));
 }
 
 #[test]
@@ -45,5 +45,5 @@ fn nist_ai_rmf_populates_manage_with_provenance_signed() {
     let ep = EvidencePacket::new("stark", "inv-001", decisions, Outcome::Approve);
     let map = m.map(&ep);
     let names: Vec<&str> = map.fields.iter().map(|(n, _)| *n).collect();
-    assert!(names.iter().any(|n| *n == "manage"));
+    assert!(names.contains(&"manage"));
 }

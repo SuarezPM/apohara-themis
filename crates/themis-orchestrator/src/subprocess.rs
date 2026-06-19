@@ -111,7 +111,7 @@ pub async fn spawn_band_subprocess(
     //    `SpawnError::Sandbox`.
     let result = tokio::task::spawn_blocking({
         let cfg = config.clone();
-        move || run_sandboxed(&cfg, &mut cmd, |r| Ok(r))
+        move || run_sandboxed(&cfg, &mut cmd, Ok)
     })
     .await
     .map_err(|e| {

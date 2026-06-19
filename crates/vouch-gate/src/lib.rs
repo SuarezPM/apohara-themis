@@ -43,7 +43,7 @@ impl Verdict {
     pub fn to_outcome(&self) -> Outcome {
         match self {
             Verdict::Allow => Outcome::Approve,
-            Verdict::Halt(r) => Outcome::Halt(r.clone()),
+            Verdict::Halt(r) => Outcome::Halt(*r),
         }
     }
 }

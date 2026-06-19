@@ -36,10 +36,16 @@ use serde::Deserialize;
 /// model block is caught immediately.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct RoutingConfig {
+    /// `fraud_auditor` agent override block (Featherless Qwen route).
+    /// Optional; missing means use the compile-time default.
     #[serde(default)]
     pub fraud_auditor: Option<AgentConfig>,
+    /// `gaap_classifier` agent override block (Featherless Llama route).
+    /// Optional; missing means use the compile-time default.
     #[serde(default)]
     pub gaap_classifier: Option<AgentConfig>,
+    /// AIML API model override block (applies to all 4 AIML-routed
+    /// agents plus the Featherless fallback). Optional.
     #[serde(default)]
     pub aiml_api: Option<AgentConfig>,
 }
@@ -50,6 +56,9 @@ pub struct RoutingConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentConfig {
+    /// Model id forwarded verbatim to the provider (e.g.
+    /// `Qwen/Qwen3-Coder-30B-A3B-Instruct` for Featherless,
+    /// `claude-sonnet-4-6` for AI/ML API).
     pub model: String,
 }
 

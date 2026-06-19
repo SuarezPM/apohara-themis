@@ -33,12 +33,10 @@ mod tests {
     #[test]
     fn framework_enum_has_four_supported_frameworks() {
         // DORA, EU AI Act, NIST AI RMF, OWASP Agentic (plus ISO 42001).
-        let f = vec![
-            Framework::Dora,
+        let f = [Framework::Dora,
             Framework::EuAiAct,
             Framework::NistAiRmf,
-            Framework::OwaspAgentic,
-        ];
+            Framework::OwaspAgentic];
         assert_eq!(f.len(), 4);
     }
 }

@@ -293,7 +293,7 @@ impl EvidenceService {
         self.chain.enforce_retention(
             &self.retention,
             chrono::Utc::now().timestamp_millis(),
-            &self.signer.tenant_id(),
+            self.signer.tenant_id(),
             self.jurisdiction.as_str(),
         )?;
         self.chain.append(payload)?;

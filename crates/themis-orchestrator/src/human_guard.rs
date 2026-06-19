@@ -102,7 +102,7 @@ impl AlertFatigueDetector {
             "max_approvals_per_window must be > 0"
         );
         Self {
-            max_approvals_per_window: max_approvals_per_window,
+            max_approvals_per_window,
             window,
             approvals: Mutex::new(VecDeque::new()),
         }

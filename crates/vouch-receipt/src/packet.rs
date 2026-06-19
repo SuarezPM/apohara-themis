@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use vouch_evidence::SealedPacket;
 
 use crate::{Art12Coverage, C2paManifest, EU_AI_ACT_ART12_FIELDS};
-use thiserror::Error;
 
 /// The 8-field EU AI Act Art. 12 envelope that wraps a
 /// sealed evidence packet. The HTTP `/seal` endpoint serializes

@@ -454,7 +454,7 @@ mod tests {
             hash_chain_link: None,
             reference_database: Some("stanford-invoicenet-50".into()),
             policy_version: Some("apohara-vouch-1".into()),
-            natural_person_id: Some(std::env::var("VOUCH_OPERATOR_EMAIL").unwrap_or_else(|_| "test-operator@example.com".to_string()).into()),
+            natural_person_id: Some(std::env::var("VOUCH_OPERATOR_EMAIL").unwrap_or_else(|_| "test-operator@example.com".to_string())),
             decision_id: Some("00000000-0000-0000-0000-000000000001".into()),
             hash_chain_prev: Some("0".repeat(64)),
             start_time: Some("2026-06-18T12:00:00Z".parse().unwrap()),

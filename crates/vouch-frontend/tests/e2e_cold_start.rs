@@ -8,7 +8,6 @@
 //! Vercel SSR cold-start measurement is left as a TODO (Playwright
 //! in CI per AC-10.6 hint #5).
 
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
