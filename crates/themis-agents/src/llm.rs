@@ -1637,6 +1637,79 @@ mod tests {
         assert!(matches!(resp.finish_reason, FinishReason::Stop));
     }
 
+    /// Caveat #1 — DeepSeek-V3 lineage: the `EvidenceClerk` agent
+    /// in `crates/vouch-agents/src/evidence_clerk.py` uses
+    /// `deepseek-ai/DeepSeek-V3-0324` via FeatherlessBackend. The
+    /// FeatherlessBackend is model-agnostic (any string passed to
+    /// `new()` flows verbatim to the OpenAI-compat request body),
+    /// so this test mirrors the Llama-3.3-70B one above but with
+    /// the DeepSeek model id. Validates the third Featherless
+    /// lineage end-to-end without needing a real Featherless key.
+    #[tokio::test]
+    async fn featherless_deepseek_v3_sends_canonical_model_id_and_parses_response() {
+        let (port, listener) = bind_ephemeral().await;
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let captured_clone = captured.clone();
+        let handle = spawn_one_shot_handler(listener, move |req_bytes| {
+            *captured_clone.lock().unwrap() = req_bytes.clone();
+            // DeepSeek returns a richer `usage` block; we just need
+            // it to deserialize into LlmResponse with stop reason.
+            let body = serde_json::json!({
+                "choices": [{"message": {"content": "{\"hash_chain_tip\":\"abcd1234\"}"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 512, "completion_tokens": 24, "total_tokens": 536}
+            })
+            .to_string();
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+        });
+
+        let model_id = "deepseek-ai/DeepSeek-V3-0324";
+        let backend = FeatherlessBackend::new("sk-test-feather".to_string(), model_id)
+            .with_base_url(format!("http://127.0.0.1:{port}"));
+        assert_eq!(backend.model_id(), "deepseek-ai/DeepSeek-V3-0324");
+
+        let resp = backend
+            .complete(LlmRequest {
+                system_prompt: "you are an evidence clerk".to_string(),
+                user_prompt: "compute the BLAKE3 hash chain tip".to_string(),
+                max_tokens: 128,
+                temperature: 0.0,
+                seed: Some(7),
+                response_schema: None,
+                response_schema_name: None,
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
+
+        let req_str = String::from_utf8_lossy(&captured.lock().unwrap().clone()).to_string();
+        assert!(
+            req_str.contains("\"model\":\"deepseek-ai/DeepSeek-V3-0324\""),
+            "request body must carry the canonical DeepSeek-V3 model id, got:\n{req_str}"
+        );
+        assert!(
+            req_str.contains("authorization: Bearer sk-test-feather"),
+            "request must carry Bearer auth for Featherless, got:\n{req_str}"
+        );
+        // DeepSeek's distinguishing wire signature: no special
+        // headers, OpenAI-compat body shape — same as any other
+        // OpenAI-compat model on Featherless.
+        assert!(
+            req_str.contains("/v1/chat/completions"),
+            "request must hit the canonical OpenAI-compat path, got:\n{req_str}"
+        );
+
+        // Response parsing must round-trip the model id and tokens.
+        assert_eq!(resp.text, "{\"hash_chain_tip\":\"abcd1234\"}");
+        assert_eq!(resp.input_tokens, 512);
+        assert_eq!(resp.output_tokens, 24);
+        assert_eq!(resp.model_id, "deepseek-ai/DeepSeek-V3-0324");
+        assert!(matches!(resp.finish_reason, FinishReason::Stop));
+    }
+
     /// G2 — Routing table integrity: every agent listed in
     /// `model_id_for_agent` (the production routing table) must
     /// resolve to a non-empty static model id when an LLM is

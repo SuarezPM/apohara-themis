@@ -144,9 +144,18 @@ fn renders_halt_with_stamp_and_matrix() {
         decoded.contains("HALT"),
         "HALT PDF should contain the literal 'HALT' stamp"
     );
+    // Post-v5 PDF redesign: the REASON label was consolidated into
+    // the BAAAR CONDITIONS matrix header. The halt reason now shows
+    // as the `value` next to the fired condition label (e.g.
+    // "fired: risk_score > 0.85"). We assert on the matrix header
+    // + the RiskScoreExceeded value string instead.
     assert!(
-        decoded.contains("REASON:"),
-        "HALT PDF should contain the 'REASON:' label followed by the halt reason"
+        decoded.contains("BAAAR CONDITIONS"),
+        "HALT PDF should contain the BAAAR CONDITIONS matrix header"
+    );
+    assert!(
+        decoded.contains("risk_score > 0.85"),
+        "HALT PDF should show the RiskScoreExceeded reason (risk_score > 0.85) in the matrix"
     );
 
     let conditions = [
