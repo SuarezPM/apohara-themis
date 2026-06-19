@@ -6,6 +6,16 @@ members = [
     # keep the bench binary hermetic (no async, no LLM, no
     # orchestrator) and CI-fast.
     "crates/themis-bench",
+    # S-03 / AC-3.7: offline packet verifier binary.
+    "bin/vouch-verify",
+]
+
+# Python-only directories under crates/ that have no Cargo.toml and
+# must not be picked up by the `crates/*` glob.
+exclude = [
+    "crates/vouch-agents",
+    "crates/themis-agents-py",
+    "crates/site",
 ]
 
 [workspace.package]
@@ -25,6 +35,15 @@ themis-evidence = { path = "crates/themis-evidence" }
 themis-band-client = { path = "crates/themis-band-client" }
 themis-compliance = { path = "crates/themis-compliance" }
 themis-frontend = { path = "crates/themis-frontend" }
+
+# S-03 VOUCH evidence layer
+vouch-chain = { path = "crates/vouch-chain" }
+vouch-evidence = { path = "crates/vouch-evidence" }
+vouch-gate = { path = "crates/vouch-gate" }
+vouch-receipt = { path = "crates/vouch-receipt" }
+vouch-aibom = { path = "crates/vouch-aibom" }
+vouch-compliance = { path = "crates/vouch-compliance" }
+vouch-orchestrator = { path = "crates/vouch-orchestrator" }
 
 # External deps for orchestrator (US-007 concurrency scheduler)
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time", "sync"] }
