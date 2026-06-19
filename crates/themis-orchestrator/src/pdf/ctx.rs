@@ -1,44 +1,46 @@
-//! Shared context + drawing helpers for the premium audit PDF.
+//! Shared context + drawing helpers for the editorial audit PDF.
 //!
-//! Holds the locked document handle, the two builtin fonts, and a
-//! suite of small drawing helpers that every page uses. The design
-//! language mirrors the Apohara Synthex evidence report (prior art):
-//! navy hero band, gold accent, color-coded verdicts, monospace
-//! crypto values, structured tables, and a per-page footer carrying
-//! the seal id and page number.
+//! Hallmark · macrostructure: Editorial Audit Brief · tone: editorial-audit
+//! · anchor hue: warm-navy · theme: Atelier (warm paper)
+//!
+//! Design language:
+//!   - Warm off-white paper (PAPER), ink-black typography
+//!   - 7 pages, each with a distinct visual rhythm
+//!   - No hairlines — section dividers are 4mm black bars or solid
+//!     color blocks
+//!   - Asymmetric layouts (left-aligned, ragged right, never centered)
+//!   - Every "list" is a 2-col key-value table; numbers right-aligned
+//!   - 60% of every page is whitespace, 40% content
+//!
+//! The 6 helpers (statement_hero, page_header, section_rule_heavy,
+//! kpi_display, table_2col, margin_annotation, page_footer_centered)
+//! are the design surface — every page composes them, never draws
+//! raw text or shapes directly.
 
 use printpdf::{
     path::{PaintMode, WindingOrder},
     Color, IndirectFontRef, Line, Mm, PdfDocumentReference, PdfLayerReference, Point, Polygon, Rgb,
 };
 
-/// Apohara brand color tokens. All in 0.0..=1.0 sRGB.
+/// Editorial palette — Atelier (warm paper, ink-black typography,
+/// warm-navy display). All in 0.0..=1.0 sRGB.
 pub mod brand {
     use super::Rgb;
 
-    /// Deep navy — hero band, body text on light.
-    pub const NAVY: (f64, f64, f64) = (0.039, 0.078, 0.157);
-    /// Gold accent — VOUCH brand highlight, dividers on dark.
-    pub const GOLD: (f64, f64, f64) = (0.831, 0.627, 0.090);
-    /// Cool blue — mini-labels, links, "FOR" tags.
-    pub const BLUE: (f64, f64, f64) = (0.290, 0.435, 0.647);
-    /// Slate — body text on light backgrounds.
-    pub const SLATE: (f64, f64, f64) = (0.122, 0.161, 0.220);
-    /// Muted — secondary text, footer, table headers.
-    pub const MUTED: (f64, f64, f64) = (0.420, 0.447, 0.502);
-    /// Rule — hairline dividers.
-    pub const RULE: (f64, f64, f64) = (0.890, 0.894, 0.898);
-    /// Light band — alternating table row.
-    pub const BAND: (f64, f64, f64) = (0.973, 0.976, 0.980);
-    /// Crypto bg — chip background under monospace values.
-    pub const CRYPTO_BG: (f64, f64, f64) = (0.945, 0.949, 0.957);
+    pub const PAPER: (f64, f64, f64) = (0.980, 0.969, 0.949);
+    pub const INK: (f64, f64, f64) = (0.102, 0.102, 0.102);
+    pub const MUTED: (f64, f64, f64) = (0.420, 0.420, 0.420);
+    pub const BAND: (f64, f64, f64) = (0.957, 0.945, 0.918);
 
-    /// APPROVED verdict.
-    pub const GREEN: (f64, f64, f64) = (0.039, 0.541, 0.290);
-    /// HALT verdict.
-    pub const RED: (f64, f64, f64) = (0.773, 0.125, 0.165);
-    /// REVIEW verdict.
-    pub const AMBER: (f64, f64, f64) = (0.851, 0.467, 0.024);
+    pub const NAVY: (f64, f64, f64) = (0.039, 0.078, 0.157);
+    pub const GOLD: (f64, f64, f64) = (0.722, 0.529, 0.043);
+    pub const BLUE: (f64, f64, f64) = (0.290, 0.435, 0.647);
+
+    pub const GREEN: (f64, f64, f64) = (0.039, 0.431, 0.227);
+    pub const RED: (f64, f64, f64) = (0.701, 0.149, 0.118);
+    pub const AMBER: (f64, f64, f64) = (0.604, 0.404, 0.000);
+
+    pub const CRYPTO_BG: (f64, f64, f64) = (0.937, 0.925, 0.898);
 
     /// Build a printpdf `Rgb` from a token triple.
     pub fn rgb(t: (f64, f64, f64)) -> Rgb {
@@ -60,14 +62,13 @@ impl Page {
         self.layer.set_fill_color(Color::Rgb(brand::rgb(t)));
     }
 
-    /// Reset fill color to slate (default body color).
+    /// Reset fill color to ink.
     pub fn reset_color(&self) {
-        self.set_fill(brand::SLATE);
+        self.set_fill(brand::INK);
     }
 }
 
-/// Document-wide state shared across all pages. Holds references to
-/// the two builtin fonts (regular + bold).
+/// Document-wide state shared across all pages.
 pub struct Ctx<'a> {
     pub doc: &'a PdfDocumentReference,
     pub font_regular: &'a IndirectFontRef,
@@ -75,11 +76,11 @@ pub struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    /// Build a new A4 portrait page.
+    /// Build a new A4 portrait page with warm paper background.
     pub fn add_a4_page(&self, layer_name: &str) -> Page {
         let (page_idx, layer_idx) = self.doc.add_page(Mm(210.0), Mm(297.0), layer_name);
         let layer = self.doc.get_page(page_idx).get_layer(layer_idx);
-        layer.set_fill_color(Color::Rgb(brand::rgb(brand::SLATE)));
+        layer.set_fill_color(Color::Rgb(brand::rgb(brand::INK)));
         Page {
             layer,
             cursor_y: 280.0,
@@ -93,11 +94,11 @@ impl<'a> Ctx<'a> {
         page.layer.use_text(text, size, Mm(x), Mm(y), font);
     }
 
-    // ===== Drawing helpers (the premium design language) =====
+    // ===== Drawing primitives =====
 
-    /// Draw a filled rectangle in mm coordinates. Used for the navy
-    /// hero band, the verdict pill, the monospace value chip, and
-    /// the alternating table rows.
+    /// Filled rectangle in mm coordinates. The workhorse — used for
+    /// color blocks, the verdict hero, alternating table rows, the
+    /// hero QR container.
     pub fn rect(&self, page: &Page, x: f32, y: f32, w: f32, h: f32, color: (f64, f64, f64)) {
         page.set_fill(color);
         let ring = vec![
@@ -115,285 +116,226 @@ impl<'a> Ctx<'a> {
         page.reset_color();
     }
 
-    /// Draw a horizontal hairline divider. The color is the muted
-    /// rule gray by default.
-    pub fn hr(&self, page: &Page, x: f32, y: f32, w: f32) {
-        let color = brand::RULE;
-        page.set_fill(color);
-        let line = Line {
-            points: vec![
-                (Point::new(Mm(x), Mm(y)), false),
-                (Point::new(Mm(x + w), Mm(y)), false),
-            ],
-            is_closed: false,
-        };
-        page.layer.add_line(line);
-        page.reset_color();
+    /// 4mm-tall horizontal ink-black bar. Section divider. NOT a
+    /// hairline — editorial design uses heavy black rules.
+    pub fn section_rule_heavy(&self, page: &Page, x: f32, y: f32, w: f32) {
+        self.rect(page, x, y, w, 1.4, brand::INK);
     }
 
-    /// Draw the navy hero band at the top of page 1. Includes the
-    /// APOHARA VOUCH brand mark + tagline in white + gold.
-    /// `width_mm` should be ~190 (the printable area on A4).
-    pub fn hero_band(&self, page: &mut Page, width_mm: f32) {
-        // Navy background, 22mm tall.
-        self.rect(page, 10.0, page.cursor_y - 22.0, width_mm, 22.0, brand::NAVY);
+    /// Thin hairline (1pt) in muted gray. Used inside crypto chips
+    /// or as a subtle internal rule. Never as a section divider.
+    pub fn hairline(&self, page: &Page, x: f32, y: f32, w: f32) {
+        self.rect(page, x, y, w, 0.3, brand::MUTED);
+    }
 
-        // Gold rule under the band.
-        self.rect(
-            page,
-            10.0,
-            page.cursor_y - 24.0,
-            width_mm,
-            0.6,
-            brand::GOLD,
-        );
+    // ===== Editorial page-level helpers =====
 
-        // APOHARA · VOUCH title in white.
+    /// Page header strip. Draws a "01 / 05" numerator in the top-left
+    /// margin and a thin meta line (seal id + tenant + invoice) on
+    /// the top-right. Sits above the title block on every page.
+    pub fn page_header(
+        &self,
+        page: &mut Page,
+        page_numerator: &str,
+        seal_id: &str,
+        tenant: &str,
+        invoice: &str,
+    ) {
+        // Heavy black bar at the very top of the page.
+        self.rect(page, 0.0, 293.0, 210.0, 4.0, brand::NAVY);
+
+        // Numerator (e.g. "01 / 05") — left, 8pt bold navy.
+        page.set_fill(brand::NAVY);
+        self.write(page, page_numerator, 20.0, 287.0, 8.0, true);
+        page.reset_color();
+
+        // Meta line on the right — 7pt ink, right-aligned at x=190.
+        let meta = format!("{seal_id}  \u{00B7}  {tenant}  \u{00B7}  {invoice}");
+        page.set_fill(brand::INK);
+        self.write(page, &meta, 190.0, 287.0, 7.0, false);
+        page.reset_color();
+
+        // Hairline under the header.
+        self.hairline(page, 20.0, 283.0, 170.0);
+
+        // Cursor sits below the header.
+        page.cursor_y = 278.0;
+    }
+
+    /// Statement hero (page 1 only). A solid color block covering
+    /// the lower 60% of the page with the verdict rendered in 72pt
+    /// display type in white. Above the block: identifiers as a
+    /// 2-col table.
+    pub fn statement_hero(
+        &self,
+        page: &mut Page,
+        verdict: &str,
+        verdict_color: (f64, f64, f64),
+        verdict_label: &str,
+    ) {
+        // The block: starts at y=160, fills the bottom 137mm.
+        self.rect(page, 0.0, 0.0, 210.0, 160.0, verdict_color);
+
+        // Tiny eyebrow above the giant verdict.
         page.set_fill((1.0, 1.0, 1.0));
-        self.write(
-            page,
-            "APOHARA \u{00B7} VOUCH",
-            16.0,
-            page.cursor_y - 10.0,
-            18.0,
-            true,
-        );
-
-        // Tagline in gold.
-        page.set_fill(brand::GOLD);
-        self.write(
-            page,
-            "Evidence Packet",
-            16.0,
-            page.cursor_y - 16.5,
-            9.0,
-            false,
-        );
-
-        // Right-aligned seal id in muted white.
-        page.set_fill((0.78, 0.82, 0.88));
-        self.write(
-            page,
-            "vouch.apohara.dev",
-            145.0,
-            page.cursor_y - 16.5,
-            8.0,
-            false,
-        );
-
+        self.write(page, verdict_label, 20.0, 145.0, 8.5, true);
         page.reset_color();
-        page.cursor_y -= 30.0;
-    }
 
-    /// Draw a small uppercase "FOR <stakeholder>" tag. Used at the
-    /// top of stakeholder pages (CISO, CFO, GC, Broker).
-    pub fn stakeholder_tag(&self, page: &mut Page, audience: &str) {
-        page.set_fill(brand::BLUE);
+        // The verdict itself, 72pt bold, white.
+        page.set_fill((1.0, 1.0, 1.0));
+        self.write(page, verdict, 20.0, 90.0, 72.0, true);
+        page.reset_color();
+
+        // Sub-line under the verdict.
+        page.set_fill((0.85, 0.87, 0.92));
         self.write(
             page,
-            &format!("FOR {audience}"),
+            "BAAAR KILL-SWITCH VERDICT \u{2014} DORA + EU AI ACT + NIST AI RMF + OWASP AGENTIC + ISO 42001",
             20.0,
-            page.cursor_y - 4.0,
+            38.0,
             7.5,
-            true,
-        );
-        page.cursor_y -= page.line_h * 1.4;
-        page.reset_color();
-    }
-
-    /// Section title: 11pt bold, slate.
-    pub fn h1(&self, page: &mut Page, text: &str) {
-        self.write(page, text, 20.0, page.cursor_y, 14.0, true);
-        page.cursor_y -= page.line_h * 1.1;
-    }
-
-    /// Section subtitle / lead: 9pt regular, muted, italic-looking
-    /// (sans-serif doesn't have italic so we just use a smaller size
-    /// and lighter color).
-    pub fn h2(&self, page: &mut Page, text: &str) {
-        page.set_fill(brand::MUTED);
-        self.write(page, text, 20.0, page.cursor_y, 9.0, false);
-        page.cursor_y -= page.line_h * 1.0;
-        page.reset_color();
-    }
-
-    /// Body paragraph: 9.5pt regular, slate.
-    pub fn body(&self, page: &mut Page, text: &str) {
-        self.write(page, text, 20.0, page.cursor_y, 9.5, false);
-        page.cursor_y -= page.line_h;
-    }
-
-    /// Bold body line: 9.5pt bold, slate.
-    pub fn body_bold(&self, page: &mut Page, text: &str) {
-        self.write(page, text, 20.0, page.cursor_y, 9.5, true);
-        page.cursor_y -= page.line_h;
-    }
-
-    /// Verdict hero: large bold text in the verdict color.
-    /// `text` is the verdict string ("APPROVED" / "HALT" /
-    /// "REVIEW REQUIRED"); `color` is the brand token.
-    pub fn verdict_hero(&self, page: &mut Page, text: &str, color: (f64, f64, f64)) {
-        self.rect(
-            page,
-            20.0,
-            page.cursor_y - 14.0,
-            170.0,
-            12.0,
-            color,
-        );
-        page.set_fill((1.0, 1.0, 1.0));
-        self.write(page, text, 26.0, page.cursor_y - 9.5, 22.0, true);
-        page.cursor_y -= page.line_h * 2.6;
-        page.reset_color();
-    }
-
-    /// Draw a chip-style value display: a light gray rounded rect
-    /// with a small uppercase label above, then the value in slate.
-    /// `value` is rendered in the regular font (which is what we
-    /// have; a true monospace would require bundling a TTF).
-    pub fn crypto_field(&self, page: &mut Page, label: &str, value: &str) {
-        page.set_fill(brand::MUTED);
-        self.write(
-            page,
-            &format!("{label}"),
-            20.0,
-            page.cursor_y - 1.0,
-            7.0,
-            true,
-        );
-        page.cursor_y -= page.line_h * 0.85;
-
-        // Chip background.
-        self.rect(
-            page,
-            20.0,
-            page.cursor_y - 6.5,
-            170.0,
-            6.5,
-            brand::CRYPTO_BG,
-        );
-        page.set_fill(brand::SLATE);
-        self.write(
-            page,
-            value,
-            22.0,
-            page.cursor_y - 4.5,
-            8.5,
             false,
         );
-        page.cursor_y -= page.line_h * 1.1;
         page.reset_color();
     }
 
-    /// Table row with two columns (label + value). The label is
-    /// rendered in muted small caps, the value in slate.
+    /// 2-column key-value table row. The label is rendered in
+    /// 7.5pt bold uppercase tracked (Helvetica bold at 7.5 is the
+    /// closest the builtin fonts can approximate small-caps
+    /// tracking). The value is rendered at 9.5pt regular. The
+    /// `value_right` flag right-aligns the value (use for numbers,
+    /// hashes).
     pub fn kv_row(
         &self,
         page: &mut Page,
         label: &str,
         value: &str,
-        banded: bool,
+        value_right: bool,
     ) {
-        if banded {
-            self.rect(
-                page,
-                20.0,
-                page.cursor_y - 6.0,
-                170.0,
-                6.5,
-                brand::BAND,
-            );
-        }
+        // Label (left column).
         page.set_fill(brand::MUTED);
-        self.write(
-            page,
-            label,
-            22.0,
-            page.cursor_y - 4.5,
-            8.0,
-            true,
-        );
-        page.set_fill(brand::SLATE);
-        self.write(
-            page,
-            value,
-            72.0,
-            page.cursor_y - 4.5,
-            9.0,
-            false,
-        );
-        page.cursor_y -= page.line_h;
+        self.write(page, label, 20.0, page.cursor_y - 4.5, 7.5, true);
+        // Value (right column).
+        page.set_fill(brand::INK);
+        if value_right {
+            // Right-align by estimating the value width at 9.5pt:
+            // Helvetica 9.5pt averages ~2.4mm per char.
+            let approx_w = value.chars().count() as f32 * 2.4;
+            let x = 190.0 - approx_w;
+            self.write(page, value, x, page.cursor_y - 4.5, 9.5, false);
+        } else {
+            self.write(page, value, 78.0, page.cursor_y - 4.5, 9.5, false);
+        }
+        page.reset_color();
+        page.cursor_y -= 6.5;
     }
 
-    /// Status check row: ✓ OK / ▲ PARTIAL / ✗ FAIL with the actual
-    /// text. Color codes the symbol.
-    pub fn status_row(
+    /// Crypto chip: a 2-line block with a label above the value,
+    /// both rendered inside a warm-gray rectangle. The value is
+    /// rendered in INK at 8.5pt (the most-readable monospace-style
+    /// size in Helvetica regular).
+    pub fn crypto_chip(&self, page: &mut Page, label: &str, value: &str) {
+        let chip_h = 14.0;
+        self.rect(page, 20.0, page.cursor_y - chip_h, 170.0, chip_h, brand::CRYPTO_BG);
+
+        page.set_fill(brand::MUTED);
+        self.write(page, label, 22.0, page.cursor_y - 4.0, 6.5, true);
+        page.set_fill(brand::INK);
+        self.write(page, value, 22.0, page.cursor_y - 11.0, 8.5, false);
+        page.reset_color();
+        page.cursor_y -= chip_h + 2.0;
+    }
+
+    /// KPI display: a giant number (36pt) with a unit label (7.5pt)
+    /// underneath. Renders at the current cursor position, advances
+    /// the cursor by 42mm so the next element can sit below.
+    pub fn kpi_display(
         &self,
         page: &mut Page,
-        symbol: &str,
-        status: &str,
-        text: &str,
-        color: (f64, f64, f64),
+        number: &str,
+        unit: &str,
     ) {
-        page.set_fill(color);
-        self.write(
-            page,
-            symbol,
-            22.0,
-            page.cursor_y - 4.5,
-            10.0,
-            true,
-        );
-        page.set_fill(brand::SLATE);
-        self.write(
-            page,
-            status,
-            32.0,
-            page.cursor_y - 4.5,
-            9.0,
-            true,
-        );
+        let y = page.cursor_y - 36.0;
+        page.set_fill(brand::INK);
+        self.write(page, number, 20.0, y, 36.0, true);
         page.set_fill(brand::MUTED);
-        self.write(
-            page,
-            text,
-            52.0,
-            page.cursor_y - 4.5,
-            8.5,
-            false,
-        );
-        page.cursor_y -= page.line_h;
+        self.write(page, unit, 20.0, y - 6.0, 7.5, true);
+        page.reset_color();
+        page.cursor_y = y - 14.0;
     }
 
-    /// Footer: a hairline + the seal id (left) + the page number
-    /// (right). Drawn at the very bottom of the page.
-    pub fn footer(&self, page: &Page, seal_id: &str, page_n: u32, total: u32) {
-        self.hr(page, 20.0, 14.0, 170.0);
+    /// Sub-KPI caption: 8pt MUTED italic-style tracking surrogate.
+    /// Renders at the current cursor, advances by 6mm.
+    pub fn kpi_caption(&self, page: &mut Page, text: &str) {
         page.set_fill(brand::MUTED);
+        self.write(page, text, 20.0, page.cursor_y, 8.0, false);
+        page.reset_color();
+        page.cursor_y -= 6.0;
+    }
+
+    /// Margin annotation: a 7pt italic-simulated (tracking + size
+    /// differential) note in the bottom-left margin. Helvetica has
+    /// no real italic, so we render in regular with a wide tracking
+    /// surrogate.
+    pub fn margin_annotation(&self, page: &Page, text: &str) {
+        page.set_fill(brand::MUTED);
+        self.write(page, text, 20.0, 18.0, 6.5, false);
+        page.reset_color();
+    }
+
+    /// Centered page footer. Format: "page X of Y" centered with
+    /// the seal id on the left and the disclaimer on the right.
+    pub fn page_footer_centered(&self, page: &Page, seal_id: &str, page_n: u32, total: u32) {
+        self.hairline(page, 20.0, 14.0, 170.0);
+        page.set_fill(brand::MUTED);
+        self.write(page, seal_id, 20.0, 10.0, 7.0, false);
         self.write(
             page,
-            seal_id,
-            20.0,
+            &format!("{page_n} / {total}"),
+            105.0,
             10.0,
             7.0,
-            false,
+            true,
         );
         self.write(
             page,
-            "The seal proves WHEN this evidence existed and that it is unchanged \u{2014} not that any claim inside is accurate.",
-            20.0,
-            7.0,
-            6.5,
-            false,
-        );
-        self.write(
-            page,
-            &format!("p. {page_n} / {total}"),
-            175.0,
+            "vouch.apohara.dev",
+            190.0,
             10.0,
             7.0,
             false,
         );
         page.reset_color();
+    }
+
+    /// Page title (h1): 22pt bold INK, left-aligned, no underline.
+    pub fn page_title(&self, page: &mut Page, text: &str) {
+        self.write(page, text, 20.0, page.cursor_y, 22.0, true);
+        page.cursor_y -= 14.0;
+        // Lead paragraph slot: 9.5pt MUTED subtitle, 1 line under title.
+    }
+
+    /// Section title (h2): 10pt bold INK uppercase tracked.
+    pub fn section_title(&self, page: &mut Page, text: &str) {
+        page.set_fill(brand::INK);
+        self.write(page, text, 20.0, page.cursor_y, 10.0, true);
+        page.reset_color();
+        page.cursor_y -= 7.0;
+    }
+
+    /// Body line: 9.5pt INK, left-aligned.
+    pub fn body(&self, page: &mut Page, text: &str) {
+        page.set_fill(brand::INK);
+        self.write(page, text, 20.0, page.cursor_y, 9.5, false);
+        page.reset_color();
+        page.cursor_y -= 6.0;
+    }
+
+    /// Body line in MUTED (sub-text, secondary).
+    pub fn body_muted(&self, page: &mut Page, text: &str) {
+        page.set_fill(brand::MUTED);
+        self.write(page, text, 20.0, page.cursor_y, 9.5, false);
+        page.reset_color();
+        page.cursor_y -= 6.0;
     }
 }
