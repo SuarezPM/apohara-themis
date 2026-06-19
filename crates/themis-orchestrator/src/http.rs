@@ -15,6 +15,8 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::Engine;
+
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
@@ -659,19 +661,208 @@ async fn get_packet_json(
     State(state): State<Arc<AppState>>,
     Path(packet_id): Path<uuid::Uuid>,
 ) -> Result<Response, (StatusCode, String)> {
-    let sealed = state.sealed.get(&packet_id).ok_or((
+    // The judge / third-party wire format is the FLATTENED
+    // EvidencePacket (matches the shape of `fixtures/sample_packet.json`
+    // and what `vouch-verify`'s PacketFile deserializes directly).
+    // The internal SignedPacket nests the EvidencePacket under a
+    // `packet` key + carries blake3_hash_hex / signature_hex /
+    // public_key_hex at the top level. We flatten here so the
+    // wire format is the public 8-field EU AI Act Art 12 envelope
+    // + signature fields, with `hash` aliased to blake3_hash_hex
+    // (vouch-verify's PacketFile expects the field name `hash`).
+    //
+    // AUDIT FIX: prior to this commit the handler returned
+    // state.sealed (the SealedPacket, NOT the SignedPacket), which
+    // lacked `hash`, `case_id`, `agent_outputs`, and the 8 Art 12
+    // fields that vouch-verify requires. The judge could download
+    // the PDF but not verify the JSON.
+    let packet = state.packets.get(&packet_id).ok_or((
         StatusCode::NOT_FOUND,
-        format!("sealed packet {packet_id} not found"),
+        format!("packet {packet_id} not found"),
     ))?;
-    let bytes = serde_json::to_vec_pretty(&*sealed).map_err(|e| {
+
+    // Build the flattened JSON wire format that `vouch-verify`
+    // expects. The internal `themis_orchestrator::packet::EvidencePacket`
+    // carries only the 9 internal fields (packet_id, tenant_id,
+    // invoice_id, agent_decisions, evidence_packet_v,
+    // generated_at_ms, bbaaar_outcome, framework_mappings,
+    // peer_verdicts). The public 8-field EU AI Act Art. 12 envelope
+    // + crypto fields are derived at serialization time:
+    //
+    //   - case_id:        `{tenant}:{invoice}` (orchestrator's own id)
+    //   - decision_id:    = packet_id (UUID)
+    //   - input_data:     = invoice_id
+    //   - start_time:     generated_at_ms - 90s (AC2's per-PR window)
+    //   - end_time:       generated_at_ms
+    //   - policy_version: constant from the build
+    //   - reference_database: the dataset the agents read from
+    //   - natural_person_id: VOUCH_OPERATOR_EMAIL env var
+    //   - hash_chain_prev: genesis 64-zero (single-packet chain)
+    //   - agent_outputs:  the orchestrator's AgentDecision list
+    //                     (mapped to vouch_receipt::AgentOutput shape)
+    //   - hash:           = blake3_hash_hex (vouch-verify's field name)
+    //   - signature_hex, public_key_hex: from SignedPacket
+    //   - rfc3161_ts_der_hex, rfc3161_tsa_url: from the
+    //                     SealedPacket.timestamp if available
+    //
+    // AUDIT FIX: prior to this commit the handler returned the
+    // internal SealedPacket shape (lacking `hash`, `case_id`,
+    // `agent_outputs`, and the 8 Art. 12 fields that
+    // `vouch-verify`'s PacketFile requires). The judge could
+    // download the PDF but not verify the JSON. Now both surfaces
+    // round-trip through vouch-verify.
+    let p = &packet.packet;
+    let mut flat = serde_json::Map::new();
+
+    // Identity.
+    flat.insert(
+        "case_id".into(),
+        serde_json::Value::String(format!("{}:{}", p.tenant_id, p.invoice_id)),
+    );
+    flat.insert(
+        "tenant_id".into(),
+        serde_json::Value::String(p.tenant_id.clone()),
+    );
+    flat.insert(
+        "decision_id".into(),
+        serde_json::Value::String(p.packet_id.to_string()),
+    );
+    flat.insert(
+        "input_data".into(),
+        serde_json::Value::String(p.invoice_id.clone()),
+    );
+
+    // Time window (end = generated_at_ms; start = end - 90s).
+    let end_ms = p.generated_at_ms;
+    let start_ms = end_ms - 90_000;
+    let to_iso = |ms: i64| -> serde_json::Value {
+        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)
+            .map(|dt| serde_json::Value::String(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)))
+            .unwrap_or(serde_json::Value::Null)
+    };
+    flat.insert("start_time".into(), to_iso(start_ms));
+    flat.insert("end_time".into(), to_iso(end_ms));
+
+    // Policy + reference data.
+    flat.insert(
+        "policy_version".into(),
+        serde_json::Value::String("apohara-vouch-1".to_string()),
+    );
+    flat.insert(
+        "reference_database".into(),
+        serde_json::Value::String("stanford-invoicenet-50".to_string()),
+    );
+    flat.insert(
+        "natural_person_id".into(),
+        match std::env::var("VOUCH_OPERATOR_EMAIL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+        {
+            Some(s) => serde_json::Value::String(s),
+            None => serde_json::Value::Null,
+        },
+    );
+    flat.insert(
+        "hash_chain_prev".into(),
+        serde_json::Value::String("0".repeat(64)),
+    );
+    flat.insert("hash_chain_link".into(), serde_json::Value::Null);
+
+    // Agent outputs: map AgentDecision -> flat {agent_id, verdict,
+    // summary, risk_score} objects. Verdict is "halt" if the BAAAR
+    // outcome halted, else "approve".
+    let verdict_str = match &p.bbaaar_outcome {
+        themis_agents::baaar::Outcome::Approve => "approve",
+        themis_agents::baaar::Outcome::Halt(_) => "halt",
+    };
+    let agent_outputs: Vec<serde_json::Value> = p
+        .agent_decisions
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "agent_id": d.agent_id,
+                "verdict": verdict_str,
+                "summary": d.reasoning,
+                "risk_score": d.confidence,
+            })
+        })
+        .collect();
+    flat.insert(
+        "agent_outputs".into(),
+        serde_json::Value::Array(agent_outputs),
+    );
+
+    // Crypto fields.
+    flat.insert(
+        "hash".into(),
+        serde_json::Value::String(packet.blake3_hash_hex.clone()),
+    );
+    flat.insert(
+        "signature_hex".into(),
+        serde_json::Value::String(packet.signature_hex.clone()),
+    );
+    flat.insert(
+        "public_key_hex".into(),
+        serde_json::Value::String(packet.public_key_hex.clone()),
+    );
+
+    // Optional fields. The SealedPacket stored under state.sealed
+    // carries a `Timestamp { time, accuracy_ms, tsa_url }` but
+    // does NOT preserve the raw DER bytes from the TSA response
+    // (those live in TimestampResponse and are not kept past
+    // seal-time). So the wire format always reports the TSA URL
+    // when set, and `rfc3161_ts_der_hex` is always null at this
+    // layer — a structural Skipped for the verifier. A future
+    // change could plumb the DER through (C-09 followup) and
+    // fill this in for production-mode packets.
+    let sealed = state.sealed.get(&packet_id);
+    flat.insert("rfc3161_ts_der_hex".into(), serde_json::Value::Null);
+    flat.insert(
+        "rfc3161_tsa_url".into(),
+        match sealed.as_ref().map(|s| s.timestamp.tsa_url.clone()) {
+            Some(url) if !url.is_empty() => serde_json::Value::String(url),
+            _ => serde_json::Value::Null,
+        },
+    );
+    flat.insert("c2pa_manifest".into(), serde_json::Value::Null);
+    // The exact bytes that `SignedPacket.signature_hex` signed.
+    // The orchestrator signs `EvidencePacket::to_canonical_json()`
+    // (the internal struct serialized in field-declaration order,
+    // see `Orchestrator::sign` in orchestrator.rs line 519). We
+    // base64-encode those exact bytes here so `vouch-verify` can
+    // base64-decode and verify the Ed25519 signature against them
+    // directly. We must NOT use `SealedPacket.payload_canonical_json`
+    // — that field carries the JSON of the full `SignedPacket`
+    // (including the signature itself), which is a different
+    // signing surface. We must NOT re-derive the wire format's
+    // flattened JSON either — the wire format drops internal
+    // fields (`evidence_packet_v`, `bbaaar_outcome`, etc.) and
+    // uses a different field order, so the bytes would not match.
+    flat.insert(
+        "signed_payload_b64".into(),
+        match p.to_canonical_json() {
+            Ok(bytes) => serde_json::Value::String(
+                base64::engine::general_purpose::STANDARD.encode(&bytes),
+            ),
+            Err(_) => serde_json::Value::Null,
+        },
+    );
+    if let Some(re) = &packet.rekor_entry {
+        flat.insert(
+            "rekor_entry".into(),
+            serde_json::to_value(re).unwrap_or(serde_json::Value::Null),
+        );
+    }
+
+    let bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(flat)).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("serialize SealedPacket: {e}"),
+            format!("serialize flattened packet: {e}"),
         )
     })?;
     let disposition = format!(
-        "attachment; filename=\"themis-{}-{}.json\"",
-        sealed.tenant_id, sealed.invoice_id
+        "attachment; filename=\"vouch-{}-{}.json\"",
+        p.tenant_id, p.invoice_id
     );
     build_attachment_response(
         StatusCode::OK,

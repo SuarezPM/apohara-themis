@@ -272,11 +272,13 @@ async fn e2e_get_packet_pdf_unknown_id_returns_404() {
 
 #[tokio::test]
 async fn e2e_get_packet_json_after_post() {
-    // Smoke for /packets/:id/json — the strict SealedPacket
-    // shape that `themis-verify` consumes. The test router does
-    // NOT wire the evidence service (the production binary
-    // does), so this exercises the 404 path and asserts the
-    // 404 message identifies the missing sealed packet.
+    // Smoke for /packets/:id/json — the flattened
+    // `vouch-verify` wire format. The handler now sources
+    // from `state.packets` (the SignedPacket) so the route
+    // works even when the evidence service isn't wired
+    // (the test router doesn't include it). We assert the
+    // response is a 200 with the 8 EU AI Act Art. 12 fields
+    // + the crypto fields vouch-verify expects.
     let app = router_for(&load_fixture("wayne-002.json"));
     let post_resp = app
         .clone()
@@ -307,15 +309,32 @@ async fn e2e_get_packet_json_after_post() {
         )
         .await
         .unwrap();
-    // No evidence service in this test router → 404, but the
-    // route is wired and the message is precise.
-    assert_eq!(json_resp.status(), StatusCode::NOT_FOUND);
+    assert_eq!(json_resp.status(), StatusCode::OK);
     let body = to_bytes(json_resp.into_body(), MAX_BODY).await.unwrap();
-    let body_str = std::str::from_utf8(&body).unwrap();
-    assert!(
-        body_str.contains("sealed packet"),
-        "expected 'sealed packet' in 404 body, got: {body_str}"
-    );
+    let wire: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    // The flattened wire format must carry the fields that
+    // `vouch-verify` PacketFile requires. We don't pin
+    // signed_payload_b64 to a specific value (SealedPacket
+    // is None in this test router), but the 8 Art. 12 fields
+    // + the crypto fields must be present.
+    for field in [
+        "case_id",
+        "tenant_id",
+        "decision_id",
+        "start_time",
+        "end_time",
+        "reference_database",
+        "input_data",
+        "policy_version",
+        "hash",
+        "signature_hex",
+        "public_key_hex",
+    ] {
+        assert!(
+            wire.get(field).is_some(),
+            "wire format missing required field `{field}`"
+        );
+    }
 }
 
 #[tokio::test]

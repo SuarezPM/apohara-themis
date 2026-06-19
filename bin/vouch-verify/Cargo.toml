@@ -25,6 +25,7 @@ chrono = { version = "0.4", default-features = false, features = ["serde", "cloc
 blake3 = "1"
 ed25519-dalek = "2"
 hex = "0.4"
+base64 = "0.22"
 
 [dev-dependencies]
 proptest = "1"

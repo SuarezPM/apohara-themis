@@ -5835,6 +5835,7 @@ dependencies = [
 name = "vouch-verify"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "blake3",
  "chrono",
  "ed25519-dalek",

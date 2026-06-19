@@ -49,6 +49,16 @@ struct PacketFile {
     rfc3161_ts_der_hex: Option<String>,
     /// Optional timestamp URL (for documentation purposes).
     rfc3161_tsa_url: Option<String>,
+    /// Optional base64-encoded original signed payload (the exact
+    /// bytes the orchestrator hashed + signed). When present, the
+    /// verifier base64-decodes it and verifies the Ed25519
+    /// signature against those exact bytes, instead of re-deriving
+    /// canonical JSON from the wire envelope (which may not match
+    /// because the orchestrator signs the internal `EvidencePacket`
+    /// that carries `evidence_packet_v`, `bbaaar_outcome`, etc.
+    /// not present in the public envelope).
+    #[serde(default)]
+    signed_payload_b64: Option<String>,
 }
 
 /// Errors from the verifier.
@@ -155,13 +165,23 @@ fn verify(packet: &PacketFile) -> Result<Vec<Step>, VerifyError> {
         let vk = VerifyingKey::from_bytes(&pk_arr)
             .map_err(|e| VerifyError::Ed25519(format!("{e:?}")))?;
         let sig = Signature::from_bytes(sig_bytes.as_slice().try_into().expect("len checked"));
-        // The verifier signs over the canonical JSON payload
-        // (re-derived from packet fields) and the orchestrator's
-        // `hash` field is the BLAKE3 of that payload. Try
-        // verifying against both: hash bytes first, then
-        // re-derived canonical payload.
+        // Three verification strategies, in priority order:
+        //   1. signed_payload (exact bytes the orchestrator signed).
+        //   2. hash bytes (BLAKE3 of the signed payload).
+        //   3. re-derived canonical JSON from the wire envelope
+        //      (works only when the wire fields match the signed
+        //      payload exactly).
         let hash_bytes = hex::decode(hash_hex)?;
         let verify_against_hash = vk.verify(&hash_bytes, &sig).is_ok();
+        let verify_against_signed_payload = packet
+            .signed_payload_b64
+            .as_deref()
+            .and_then(|b64| {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.decode(b64).ok()
+            })
+            .map(|bytes| vk.verify(&bytes, &sig).is_ok())
+            .unwrap_or(false);
         // Re-derive canonical payload from packet fields (best effort).
         let canonical = serde_json::json!({
             "case_id": packet.case_id,
@@ -180,12 +200,12 @@ fn verify(packet: &PacketFile) -> Result<Vec<Step>, VerifyError> {
         } else {
             false
         };
-        if verify_against_hash || verify_against_payload {
+        if verify_against_hash || verify_against_signed_payload || verify_against_payload {
             steps.push(Step::Pass("ed25519_signature"));
         } else {
             steps.push(Step::Fail(
                 "ed25519_signature",
-                "signature did not verify against hash bytes or canonical payload".into(),
+                "signature did not verify against signed_payload, hash bytes, or canonical payload".into(),
             ));
         }
     }
@@ -466,6 +486,7 @@ mod tests {
             c2pa_manifest: None,
             rfc3161_ts_der_hex: None,
             rfc3161_tsa_url: None,
+            signed_payload_b64: None,
         }
     }
 
