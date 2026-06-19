@@ -126,6 +126,13 @@ remains intact - VOUCH is the substrate, THEMIS was one instance.
 
 ## Try it
 
+> ⚠️ **The 9-agent court requires `BAND_*_ID` + `BAND_*_API_KEY` env vars**
+> for all 9 agents (1 orchestrator + 8 specialists). Without them,
+> the demo gracefully degrades to mock mode (every agent returns
+> canned responses). See `crates/themis-band-client/agent-config/agent_config.yaml`
+> for the full list — the keys are issued by `app.band.ai` when
+> you register the agents as External Agents.
+
 ```bash
 git clone https://github.com/SuarezPM/apohara-vouch && cd apohara-vouch
 cargo build --release
@@ -188,7 +195,7 @@ docs/video-script.md      ← 5-min video script, 3 prize-category shots
 docs/cross-prize-narrative.md ← Main + AI/ML API + Featherless narrative
 ```
 
-Single Rust binary: `target/release/vouch-verify` (~570 KB). Single Python package: `crates/vouch-agents/`. One Vercel surface: `vouch.apohara.dev`.
+Single Rust binary: `target/release/vouch-verify` (~668 KB measured on x86_64-unknown-linux-gnu release). Single Python package: `crates/vouch-agents/`. One Vercel surface: `vouch.apohara.dev` (pending deploy).
 
 ---
 
