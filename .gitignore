@@ -3,6 +3,8 @@
 **/target
 **/*.rs.bk
 Cargo.lock.bak
+# External rustc side-output (e.g. rustc --emit=metadata librust_out.rmeta)
+*.rmeta
 # Vercel build output (rebuilt by scripts/vercel-build.sh on every deploy)
 /public
 # Python bytecode (C-12 cross-framework peers)
@@ -16,6 +18,10 @@ Cargo.lock.bak
 /.archive/
 # OMC workflow state
 /.omc/
+crates/*/.omc/  # noqa: ERA001  # OMC state inside crate subdirs
+# Python virtualenvs (per-crate)
+/.venv/
+crates/*/.venv/  # noqa: ERA001
 # Session / IDE caches
 /.claude/settings.local.json
 /.claude/sessions/
@@ -69,6 +75,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .vercel
+# Node deps (Playwright etc.)
+/node_modules/
 
 # OMC state leakage guard
 crates/themis-evidence/proto/rekor/v2/.omc/
+# ─── Pre-rename historical docs (kept locally for reference) ─────────
+# docs/THEMIS-3.0-SUPREME-PLAN.md — pre-VOUCH planning artifact, not
+# part of the published surface. Moved to /home/thelinconx/.archive/.
+/docs/THEMIS-3.0-SUPREME-PLAN.md
