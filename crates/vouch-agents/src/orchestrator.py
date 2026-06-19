@@ -760,10 +760,19 @@ class Orchestrator:
         construct the agent; the harness is responsible for the
         ``await agent.run()`` call (AC-1.6 — "persists WebSocket
         connection" is the runtime guarantee of band-sdk 1.0.0).
+
+        Note on the import: ``band.adapters.LangGraphAdapter`` is
+        the canonical public path defined by band-sdk 1.0.0
+        (see ``band/adapters/__init__.py`` — adapters are
+        re-exported under ``TYPE_CHECKING`` for static analysis).
+        The ``# type: ignore[import-not-found]`` only suppresses
+        mypy's complaint when the test runner executes outside
+        the vendored ``.venv`` (the package isn't on the system
+        ``site-packages``). The runtime path is correct.
         """
         # Defer heavy imports so the module is importable in unit
         # tests without the band runtime.
-        from band.adapters import LangGraphAdapter  # type: ignore
+        from band.adapters import LangGraphAdapter  # type: ignore[import-not-found]
 
         adapter = LangGraphAdapter(
             llm=self.llm,

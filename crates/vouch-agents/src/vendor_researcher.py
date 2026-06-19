@@ -471,8 +471,16 @@ class VendorResearcher:
         factory, and the ``vendor_lookup`` tool into the Band
         adapter. Tests do NOT call this; they use ``run(case, tools)``
         directly with a mocked ``FakeAgentTools``.
+
+        Note on the import: ``band.adapters.LangGraphAdapter`` is
+        the canonical public path defined by band-sdk 1.0.0
+        (see ``band/adapters/__init__.py`` — adapters are
+        re-exported under ``TYPE_CHECKING`` for static analysis).
+        The ``# type: ignore[import-not-found]`` only suppresses
+        mypy's complaint when the test runner executes outside
+        the vendored ``.venv``. The runtime path is correct.
         """
-        from band.adapters import LangGraphAdapter  # type: ignore
+        from band.adapters import LangGraphAdapter  # type: ignore[import-not-found]
 
         return LangGraphAdapter(
             llm=self.llm,

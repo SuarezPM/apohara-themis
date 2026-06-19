@@ -1568,6 +1568,118 @@ mod tests {
         assert_eq!(backend.model_id(), "Qwen/Qwen3-Coder-30B-A3B-Instruct");
     }
 
+    /// G2 — Llama-3.3-70B-Instruct lineage: the
+    /// `gaap_classifier` agent routes to `meta-llama/Llama-3.3-70B-Instruct`
+    /// via FeatherlessBackend. Validate end-to-end: the request body
+    /// carries the canonical model id, the response is parsed, and
+    /// `model_id` on the response matches what `model_id_for_agent`
+    /// returns for `gaap_classifier`. This is the second lineage
+    /// after Qwen3-Coder-30B — proves FeatherlessBackend is
+    /// model-agnostic (any string passed to `new()` flows verbatim).
+    #[tokio::test]
+    async fn featherless_llama70b_sends_canonical_model_id_and_parses_response() {
+        // Bind a local mock that captures the request body and
+        // asserts the model id is exactly meta-llama/Llama-3.3-70B-Instruct.
+        let (port, listener) = bind_ephemeral().await;
+        let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let captured_clone = captured.clone();
+        let handle = spawn_one_shot_handler(listener, move |req_bytes| {
+            *captured_clone.lock().unwrap() = req_bytes.clone();
+            let body = serde_json::json!({
+                "choices": [{"message": {"content": "{\"classification\":\"current_asset\"}"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 256, "completion_tokens": 12, "total_tokens": 268}
+            })
+            .to_string();
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+        });
+
+        let model_id = model_id_for_agent("gaap_classifier")
+            .expect("gaap_classifier must have a model id");
+        assert_eq!(
+            model_id, "meta-llama/Llama-3.3-70B-Instruct",
+            "gaap_classifier lineage must be Llama-3.3-70B-Instruct"
+        );
+
+        let backend = FeatherlessBackend::new("sk-test-feather".to_string(), model_id)
+            .with_base_url(format!("http://127.0.0.1:{port}"));
+        assert_eq!(backend.model_id(), "meta-llama/Llama-3.3-70B-Instruct");
+
+        let resp = backend
+            .complete(LlmRequest {
+                system_prompt: "you are a GAAP classifier".to_string(),
+                user_prompt: "classify account 1200 as current or non-current".to_string(),
+                max_tokens: 64,
+                temperature: 0.0,
+                seed: Some(42),
+                response_schema: None,
+                response_schema_name: None,
+            })
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        let req_str = String::from_utf8_lossy(&captured.lock().unwrap().clone()).to_string();
+        assert!(
+            req_str.contains("\"model\":\"meta-llama/Llama-3.3-70B-Instruct\""),
+            "request body must carry the canonical Llama-3.3-70B model id, got:\n{req_str}"
+        );
+        assert!(
+            req_str.contains("authorization: Bearer sk-test-feather"),
+            "request must carry Bearer auth for Featherless, got:\n{req_str}"
+        );
+        assert_eq!(resp.text, "{\"classification\":\"current_asset\"}");
+        assert_eq!(resp.input_tokens, 256);
+        assert_eq!(resp.output_tokens, 12);
+        assert_eq!(resp.model_id, "meta-llama/Llama-3.3-70B-Instruct");
+        assert!(matches!(resp.finish_reason, FinishReason::Stop));
+    }
+
+    /// G2 — Routing table integrity: every agent listed in
+    /// `model_id_for_agent` (the production routing table) must
+    /// resolve to a non-empty static model id when an LLM is
+    /// needed, and the *core* agents (FraudAuditor, GaapClassifier)
+    /// must use different lineages (heterogeneous-routing
+    /// invariant — Frontiers 2026, consensus-trap resistance).
+    /// Shadow agents (`extractor`, `demo_narrator`, ...) share the
+    /// cheap Qwen/Qwen3-30B by design (see the doc-comment above).
+    /// This is the cheap, always-green guard against silent
+    /// regressions — much faster than an e2e against a real provider.
+    #[test]
+    fn featherless_routing_table_is_well_formed() {
+        let llm_agents = [
+            "fraud_auditor",
+            "gaap_classifier",
+            "extractor",
+            "demo_narrator",
+            "audit_watchdog",
+            "regression_tester",
+        ];
+        for agent in llm_agents {
+            let model = model_id_for_agent(agent)
+                .unwrap_or_else(|| panic!("{agent} must have a model id in the routing table"));
+            assert!(
+                !model.is_empty(),
+                "{agent} resolved to an empty model id"
+            );
+        }
+        // Heterogeneous-routing invariant: the two core agents
+        // MUST use different lineages (anti-consensus-trap).
+        let fraud = model_id_for_agent("fraud_auditor").unwrap();
+        let gaap = model_id_for_agent("gaap_classifier").unwrap();
+        assert_ne!(
+            fraud, gaap,
+            "FraudAuditor ({fraud}) and GaapClassifier ({gaap}) must use different lineages for consensus-trap resistance"
+        );
+        // Deterministic agents MUST return None (no LLM cost).
+        assert!(model_id_for_agent("po_matcher").is_none());
+        assert!(model_id_for_agent("provenance_signer").is_none());
+        // Unknown agents MUST return None (don't guess).
+        assert!(model_id_for_agent("nonexistent_agent_xyz").is_none());
+    }
+
     #[tokio::test]
     async fn featherless_sends_response_format_when_schema_set() {
         // When `response_schema` is Some, the request body must
