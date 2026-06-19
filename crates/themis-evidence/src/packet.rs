@@ -72,7 +72,14 @@ pub struct SealedPacket {
     /// disabled (e.g. test fixtures) or for packets sealed
     /// before C-10 landed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg(feature = "sealchain-wrap")]
     pub sealchain_receipt: Option<crate::sealchain_wrap::C2paReceipt>,
+    /// Placeholder when SealChain is disabled. Always `None` in
+    /// practice; exists so the JSON shape doesn't lose the field
+    /// when the `sealchain-wrap` feature is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg(not(feature = "sealchain-wrap"))]
+    pub sealchain_receipt: Option<serde_json::Value>,
     /// EU AI Act Article 49 mock registration id (C-10 /
     /// G30). Embedded in the C2PA manifest's Art 50
     /// assertion. A short, stable identifier (e.g.

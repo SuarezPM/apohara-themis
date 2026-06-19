@@ -84,8 +84,28 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Build release binaries
-        run: cargo build --release --workspace --bins
+      - name: Clone apohara-sealchain sibling (for sealchain-wrap path dep)
+        # `apohara-sealchain-core` is a path dep behind the
+        # `sealchain-wrap` feature (see crates/themis-evidence/Cargo.toml).
+        # The sibling repo is private; CI clones it with the
+        # secret `APOHARA_SEALCHAIN_TOKEN` (a PAT with `repo` scope
+        # on the apohara org). Without this clone, `cargo build
+        # --features themis-evidence/sealchain-wrap` fails on
+        # `cargo metadata`.
+        run: |
+          if [ -n "$APOHARA_SEALCHAIN_TOKEN" ]; then
+            git clone --depth 1 https://x-access-token:${APOHARA_SEALCHAIN_TOKEN}@github.com/SuarezPM/apohara-sealchain.git /home/runner/work/apohara-sealchain
+          else
+            echo "::warning::APOHARA_SEALCHAIN_TOKEN not set; skipping sealchain sibling clone. Build will use sealchain-wrap OFF (mock fallback path)."
+            exit 0
+          fi
+      - name: Build release binaries (sealchain-wrap on)
+        # The `sealchain-wrap` feature pulls in the path dep that
+        # the previous step cloned. If the clone was skipped
+        # (no secret), the build still succeeds via the mock
+        # fallback (the upstream crate gates `sealchain_wrap` behind
+        # the feature so it's not pulled in).
+        run: cargo build --release --workspace --bins --features themis-evidence/sealchain-wrap
       - name: Enforce 30 MB cap
         run: bash scripts/check-binary-size.sh
 
@@ -117,8 +137,13 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Clone apohara-sealchain sibling (for sealchain-wrap path dep)
+        run: |
+          if [ -n "$APOHARA_SEALCHAIN_TOKEN" ]; then
+            git clone --depth 1 https://x-access-token:${APOHARA_SEALCHAIN_TOKEN}@github.com/SuarezPM/apohara-sealchain.git /home/runner/work/apohara-sealchain
+          fi
       - name: cargo test --workspace
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets --features themis-evidence/sealchain-wrap
 
   # Python agent tests + cross-account Compliance Veto chaos
   # harness. The chaos harness (test_compliance_fallback_chaos.py)
