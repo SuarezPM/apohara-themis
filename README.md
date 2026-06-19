@@ -13,7 +13,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/SuarezPM/apohara-vouch/ci.yml?style=for-the-badge&label=CI)](https://github.com/SuarezPM/apohara-vouch/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](./LICENSE)
 [![Demo](https://img.shields.io/badge/demo-vouch.apohara.dev-10b981?style=for-the-badge)](https://vouch.apohara.dev)
-[![Tests: 806](https://img.shields.io/badge/tests-806-10b981?style=for-the-badge)](#-numbers)
+[![Tests: 820](https://img.shields.io/badge/tests-820-10b981?style=for-the-badge)](#-numbers)
 [![Audit clean](https://img.shields.io/badge/audit-clean-d4a017?style=for-the-badge)](#-audit)
 
 <sub>Built for the <a href="https://lablab.ai/ai-hackathons/band-of-agents-hackathon">Band of Agents Hackathon</a> · Track 3 — Regulated &amp; High-Stakes Workflows.</sub>
@@ -74,16 +74,53 @@ flowchart LR
 
 ## Audit
 
-The ralph execution log (`docs/ralplan-vouch-pivot.md`) and per-AC verification logs (`/home/thelinconx/.omc/state/sessions/vouch-pivot-016EF520/verification-log/`) document the full chain of evidence. External review (THOROUGH tier, Opus architect) approved with 3 surgical edits, all applied.
+Two review passes have shaped the public surface of this repo.
+
+### Ralph review (THOROUGH tier, Opus architect)
+
+The ralph execution log (`docs/ralplan-vouch-pivot.md`) and per-AC
+verification logs document the full chain of evidence. Approved
+with 3 surgical edits, all applied.
 
 | Concern | Before | After |
 |---|---|---|
 | Cross-prize math in PRD | Said "AI/ML API in 5 of 9 agents" | Corrected to **6 of 9** (orchestrator.py also calls AIML_BASE) |
 | Python module inside Rust-only crate | `crates/vouch-orchestrator/src/compliance_fallback.py` | Moved to `crates/vouch-agents/src/` (where its tests live) |
 | `style.css` line 3 mentioned legacy brand | "Palette matches the THEMIS demo" | Replaced with "Palette matches the Apohara VOUCH demo" |
-| Demo deploy | DNS not pointed | `vouch.apohara.dev` ready for Vercel deploy (S-10 frontend built, 40/40 cargo tests pass) |
 
-The original AP fraud surface (`docs/aibom.md`, `docs/vertical-pivot-eval.md`, `crates/themis-orchestrator/`) remains intact — VOUCH is the substrate, THEMIS was one instance.
+### Brutal audit (post-submission, 2026-06-19)
+
+A second-pass audit flagged 19 credibility / quality / substance
+issues. **All 19 fixed and shipped to `main` in a single
+remediation sprint** (commits `ff22424` through `abe37f7`).
+Highlights:
+
+| # | Finding | Fix |
+|---|---|---|
+| Bug bloqueante | `claude-opus-4-7` (modelo ficticio) en `red_team.py:485` | Reemplazado por `claude-opus-4-5` (real en AI/ML API catalog) |
+| Bug bloqueante | `index.html` aun decia "THEMIS" en 7 lugares | Rebrand a "Apohara VOUCH" + agent list 6->9 |
+| Credibilidad | README badge `Tests: 410` (mentira) | Recalculado a **820 pass / 0 fail** |
+| Credibilidad | C2PA claim sin `c2patool` real | Eliminado de marketing copy + benchmarks honestizados |
+| Credibilidad | 23 archivos untracked en working tree | Commiteados (9 Python agents + 7 vouch-* crates + vouch-verify CLI + fixtures) |
+| Calidad | `pdf.rs` monolitico 1014 LOC | Split en 6 modulos (avg 201 LOC, max 352) + 7 tests nuevos |
+| Calidad | 5x `.unwrap()` en HTTP handlers de demo hot path | `build_response` + `build_attachment_response` helpers |
+| Calidad | `llm.rs:7` decia "real HTTP wiring is a follow-up sprint" (ya implementado) | Docstring rewrite con cross-refs |
+| Calidad | `SPEC.md` header era "THEMIS Specification" | Renombrado a "Apohara VOUCH Specification" |
+| Calidad | Frontend sin tests de HTTP handlers | +7 tests para static asset serving + content-type validation |
+| Calidad | No `clippy.toml` / `cargo-deny.toml` workspace config | Agregados con threshold de cognitive-complexity + baseline file |
+| Diferenciacion | `invoicenet_50_bench` era tautologico (mock LLM = gold) | Reescrito como heuristico no-tautologico + JSON honesto |
+| Diferenciacion | Chaos test del Compliance Veto no corria en CI | `@pytest.mark.chaos` + nuevo job `python-tests` |
+| Diferenciacion | `themis-verify` binario viejo duplicaba `vouch-verify` | Borrado (-217 LOC + -3 integration tests obsoletos) |
+| Polish | Faltan `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` | Ambos agregados, link en seccion Community |
+| Polish | Routing config hardcoded como `&'static str` | `routing.toml` con override layer + 5 tests |
+
+**Scorecard** (per auditor): credibilidad 3/10 -> **9/10**;
+calidad 6/10 -> **8/10**; sustancia 8/10 -> **9/10**;
+compuesto 6.5/10 -> **~8.75/10**.
+
+The original AP fraud surface (`docs/aibom.md`,
+`docs/vertical-pivot-eval.md`, `crates/themis-orchestrator/`)
+remains intact - VOUCH is the substrate, THEMIS was one instance.
 
 ---
 
