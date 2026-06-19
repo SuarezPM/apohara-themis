@@ -204,5 +204,5 @@ async fn test_root_still_serves_after_c08() {
         .await
         .unwrap();
     let html = std::str::from_utf8(&body).unwrap();
-    assert!(html.contains("THEMIS"));
+    assert!(html.contains("Apohara VOUCH"));
 }

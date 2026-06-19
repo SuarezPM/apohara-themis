@@ -869,7 +869,7 @@ mod tests {
         assert!(ct.starts_with("text/html"));
         let body = to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
         let s = String::from_utf8_lossy(&body);
-        assert!(s.contains("THEMIS"));
+        assert!(s.contains("Apohara VOUCH"));
     }
 
     #[tokio::test]

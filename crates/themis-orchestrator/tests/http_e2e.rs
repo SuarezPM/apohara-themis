@@ -132,7 +132,7 @@ async fn e2e_get_root_returns_index_html() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = to_bytes(resp.into_body(), MAX_BODY).await.unwrap();
     let html = std::str::from_utf8(&body).unwrap();
-    assert!(html.contains("THEMIS"));
+    assert!(html.contains("Apohara VOUCH"));
     assert!(html.contains("<!DOCTYPE html>") || html.contains("<!doctype html>"));
 }
 
@@ -1208,4 +1208,111 @@ async fn incident_reported_event_fires_on_baaar_halt() {
         narrative.contains("BAAAR HALT"),
         "narrative must reference BAAAR HALT: {narrative}"
     );
+}
+
+// --- Static asset handler tests (audit S2-I3) ---------------------------
+//
+// The auditor flagged themis-frontend as 215 LOC with no HTTP-handler
+// tests. These tests exercise the orchestrator's static-asset routing
+// against the real `build_router`, validating content-type headers
+// and 404 behavior so the Vercel-deployed demo URL serves the right
+// MIME types for each asset.
+
+/// Helper: send a GET to the router and return (status, content-type, body).
+async fn get(app: axum::Router, path: &str) -> (StatusCode, String, Vec<u8>) {
+    let resp = app
+        .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap_or("").to_string())
+        .unwrap_or_default();
+    let body = to_bytes(resp.into_body(), MAX_BODY).await.unwrap().to_vec();
+    (status, content_type, body)
+}
+
+#[tokio::test]
+async fn get_index_returns_html_with_doctype() {
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let (status, ct, body) = get(app, "/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        ct.starts_with("text/html"),
+        "expected text/html content-type, got {ct:?}"
+    );
+    let html = std::str::from_utf8(&body).unwrap();
+    assert!(
+        html.contains("<!DOCTYPE html>") || html.contains("<!doctype html>"),
+        "index.html must start with doctype"
+    );
+}
+
+#[tokio::test]
+async fn get_compliance_dashboard_returns_html() {
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let (status, ct, _) = get(app, "/compliance").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        ct.starts_with("text/html"),
+        "expected text/html content-type, got {ct:?}"
+    );
+}
+
+#[tokio::test]
+async fn get_tokens_css_returns_css_content_type() {
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let (status, ct, body) = get(app, "/static/tokens.css").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        ct.starts_with("text/css"),
+        "expected text/css content-type, got {ct:?}"
+    );
+    assert!(!body.is_empty(), "tokens.css body must be non-empty");
+}
+
+#[tokio::test]
+async fn get_app_css_returns_css_content_type() {
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let (status, ct, _) = get(app, "/static/app.css").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        ct.starts_with("text/css"),
+        "expected text/css content-type, got {ct:?}"
+    );
+}
+
+#[tokio::test]
+async fn get_app_js_returns_javascript_content_type() {
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let (status, ct, body) = get(app, "/static/app.js").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        ct.starts_with("application/javascript"),
+        "expected application/javascript content-type, got {ct:?}"
+    );
+    // Sanity: the JS references the submit handler the frontend tests
+    // pin on (so this is end-to-end validated against real bytes).
+    let js = std::str::from_utf8(&body).unwrap();
+    assert!(
+        js.contains("submit-form"),
+        "app.js must define the submit-form handler"
+    );
+}
+
+#[tokio::test]
+async fn get_unknown_static_path_returns_404() {
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let (status, _ct, _body) = get(app, "/static/does-not-exist.css").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn get_unknown_packet_pdf_returns_404() {
+    let app = router_for(&load_fixture("wayne-002.json"));
+    let bogus = uuid::Uuid::nil();
+    let (status, _ct, _body) = get(app, &format!("/packets/{bogus}/pdf")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
