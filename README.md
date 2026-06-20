@@ -9,9 +9,9 @@
 <p align="center">
   <sub>
     <a href="https://vouch.apohara.dev"><img src="https://img.shields.io/badge/demo-live-10b981?style=for-the-badge" alt="Demo"></a>
-    <img src="https://img.shields.io/badge/tests-820%20pass%20%2F%200%20fail-10b981?style=for-the-badge" alt="Tests">
+    <img src="https://img.shields.io/badge/tests-812%20pass%20%2F%200%20fail-10b981?style=for-the-badge" alt="Tests">
     <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License">
-    <img src="https://img.shields.io/badge/audit%20score-8.6%2F10-d4a017?style=for-the-badge" alt="Audit">
+    <img src="https://img.shields.io/badge/audit%20score-8.25%2F10-d4a017?style=for-the-badge" alt="Audit">
   </sub>
 </p>
 
@@ -223,7 +223,7 @@ Two independent review passes shaped the public surface. **All findings fixed an
 |---|---|---|
 | Bug bloqueante | `claude-opus-4-7` (ficticio) en `crates/vouch-agents/src/red_team.py` | → `claude-opus-4-5` (real, AIML API exposed model id) |
 | Bug bloqueante | `index.html` decía "THEMIS" en 7 lugares | Rebrand completo |
-| Credibilidad | Badge `Tests: 410` mentiroso | → **820 pass / 0 fail** |
+| Credibilidad | Badge `Tests: 410` mentiroso | → **812 pass / 0 fail** |
 | Credibilidad | C2PA claim sin `c2patool` real | Eliminado + `C2PA-shaped` honesto |
 | Credibilidad | 23 archivos untracked | 9 Python agents + 7 `vouch-*` crates + CLI + fixtures commiteados |
 | Calidad | `pdf.rs` 1014 LOC | Split en 6 módulos (avg 201 LOC, max 352) |
@@ -232,7 +232,7 @@ Two independent review passes shaped the public surface. **All findings fixed an
 | Diferenciación | Chaos test no corría en CI | `@pytest.mark.chaos` + `python-tests` job |
 | Supply chain | Sin `cargo-deny` | Configurado + threat-model documentado para RUSTSEC-2023-0071 |
 
-**Scorecard final**: credibilidad **3/10 → 9/10**, calidad **6/10 → 8/10**, sustancia **8/10 → 9/10**, compuesto **6.5/10 → 8.6/10**.
+**Scorecard final**: credibilidad **3/10 → 8.5/10**, calidad **6/10 → 8/10**, sustancia **8/10 → 9/10**, compuesto **6.5/10 → 8.25/10**.
 
 ---
 
